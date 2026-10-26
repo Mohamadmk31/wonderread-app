@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WonderRead | المكتبة الرقمية الفاخرة</title>
+    <title>WonderRead | المكتبة الرقمية</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -11,11 +11,7 @@
             theme: {
                 extend: {
                     colors: {
-                        gold: {
-                            DEFAULT: '#D4AF37',
-                            light: '#F3E5AB',
-                            dark: '#AA7C11'
-                        },
+                        gold: { DEFAULT: '#D4AF37', light: '#F3E5AB', dark: '#AA7C11' },
                         luxuryBg: '#0D0D0D',
                         luxuryCard: '#161616',
                         luxuryBorder: '#2A2A2A'
@@ -24,15 +20,17 @@
             }
         }
     </script>
-    <!-- React & Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Firebase v8 -->
+    <!-- Firebase SDK v8 -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
 
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     <style>
@@ -40,67 +38,84 @@
             font-family: 'Cairo', sans-serif;
             background-color: #0D0D0D;
             color: #FFFFFF;
-            user-select: none;
+            margin: 0;
+            padding: 0;
             -webkit-user-select: none;
+            user-select: none;
         }
-        @media print { body { display: none; } }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #0D0D0D; }
-        ::-webkit-scrollbar-thumb { background: #D4AF37; border-radius: 3px; }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-thumb { background: #D4AF37; border-radius: 4px; }
     </style>
 </head>
-<body class="overflow-x-hidden">
+<body class="bg-[#0D0D0D] text-white">
 
-    <div id="root"></div>
+    <div id="root">
+        <!-- شاشة تحميل تظهر فوراً ريثما يجهز التطبيق -->
+        <div style="display:flex; justify-content:center; align-items:center; height:100vh; flex-direction:column; gap:12px;">
+            <div style="width:36px; height:36px; border:3px solid #D4AF37; border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite;"></div>
+            <p style="color:#D4AF37; font-size:13px; font-family:'Cairo',sans-serif;">جاري تشغيل مكتبة WonderRead...</p>
+        </div>
+        <style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>
+    </div>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyB5y-QiubQ6X-Cu0orHAT58S1uGpglnxbc",
-            authDomain: "wonderread-app-e760b.firebaseapp.com",
-            projectId: "wonderread-app-e760b",
-            storageBucket: "wonderread-app-e760b.firebasestorage.app"
-        };
-
-        if (!firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
+        // تهيئة السحابة بأمان تام مع معالجة أي تعذر في الاتصال
+        let db = null;
+        try {
+            const firebaseConfig = {
+                apiKey: "AIzaSyB5y-QiubQ6X-Cu0orHAT58S1uGpglnxbc",
+                authDomain: "wonderread-app-e760b.firebaseapp.com",
+                projectId: "wonderread-app-e760b",
+                storageBucket: "wonderread-app-e760b.firebasestorage.app"
+            };
+            if (window.firebase && !firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
+                db = firebase.firestore();
+            } else if (window.firebase) {
+                db = firebase.firestore();
+            }
+        } catch (e) {
+            console.warn("تنبيه الاتصال السحابي:", e);
         }
-        const db = firebase.firestore();
 
-        const CATEGORIES = ["الكل", "إدارة وأعمال", "تاريخ", "تكنولوجيا", "تطوير ذات", "روايات"];
-
-        const SEED_BOOKS = [
+        const INITIAL_BOOKS = [
             {
+                id: "b1",
                 title: "سر الفخامة والريادة المالية",
                 author: "د. عبد الرحمن الفايز",
-                description: "دليل عملي شامل لبناء الثروة وتطوير العقلية المالية الفاخرة في العصر الحديث.",
+                description: "دليل عملي شامل لبناء الثروة وتطوير العقلية المالية الفاخرة وإدارة الأصول بكفاءة.",
                 category: "إدارة وأعمال",
                 cover_image: "https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=400",
                 price: 49.99,
                 preview_pages: 5,
-                rating: 4.8,
                 pages: 280,
-                status: "featured"
+                rating: 4.8
             },
             {
+                id: "b2",
                 title: "رحلة في غياهب التاريخ العربي",
                 author: "أ. سارة الهاشمي",
-                description: "دراسة تاريخية معمقة تكشف خفايا الأحداث والتحولات الكبرى في المشرق العربي.",
+                description: "دراسة تاريخية معاصرة تكشف خفايا الأحداث والتحولات الكبرى في المشرق العربي.",
                 category: "تاريخ",
                 cover_image: "https://images.unsplash.com/photo-1506880018603-83d5b814b5a6?auto=format&fit=crop&q=80&w=400",
                 price: 29.99,
                 preview_pages: 3,
-                rating: 4.5,
                 pages: 340,
-                status: "new"
+                rating: 4.5
             }
         ];
 
-        function App() {
+        const CATEGORIES = ["الكل", "إدارة وأعمال", "تاريخ", "تكنولوجيا", "تطوير ذات", "روايات"];
+
+        function WonderReadApp() {
             const [currentScreen, setCurrentScreen] = useState('home');
-            const [books, setBooks] = useState([]);
-            const [loading, setLoading] = useState(true);
+            const [books, setBooks] = useState(() => {
+                const saved = localStorage.getItem('wonderread_books');
+                return saved ? JSON.parse(saved) : INITIAL_BOOKS;
+            });
+            const [isCloudActive, setIsCloudActive] = useState(false);
             const [selectedBook, setSelectedBook] = useState(null);
             const [searchQuery, setSearchQuery] = useState('');
             const [selectedCategory, setSelectedCategory] = useState('الكل');
@@ -110,39 +125,37 @@
             const [isNightMode, setIsNightMode] = useState(true);
 
             const [user] = useState({
-                id: "admin_user",
                 name: "محمد عقاد",
-                email: "admin@wonderread.com",
-                role: "super_admin",
-                subscription_type: "مدى الحياة",
-                purchased_books: []
+                role: "super_admin"
             });
 
             const [newBook, setNewBook] = useState({
-                title: '', author: '', description: '', category: 'إدارة وأعمال',
-                price: '', preview_pages: 5, pages: 150, cover_image: ''
+                title: '', author: '', category: 'إدارة وأعمال', price: '', pages: 150, cover_image: '', description: ''
             });
 
+            // ربط السحابة Firestore بمزامنة فورية إن وُجدت
             useEffect(() => {
-                const unsubscribe = db.collection("books").onSnapshot(async (snapshot) => {
-                    if (snapshot.empty) {
-                        for (const b of SEED_BOOKS) {
-                            await db.collection("books").add(b);
-                        }
-                    } else {
-                        const loadedBooks = snapshot.docs.map(doc => ({
-                            id: doc.id,
-                            ...doc.data()
-                        }));
-                        setBooks(loadedBooks);
-                        setLoading(false);
+                if (db) {
+                    try {
+                        const unsub = db.collection("books").onSnapshot(snapshot => {
+                            if (!snapshot.empty) {
+                                const cloudData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                setBooks(cloudData);
+                                localStorage.setItem('wonderread_books', JSON.stringify(cloudData));
+                                setIsCloudActive(true);
+                            } else {
+                                INITIAL_BOOKS.forEach(b => db.collection("books").add(b));
+                                setIsCloudActive(true);
+                            }
+                        }, err => {
+                            console.warn("السحابة تعمل في الوضع المحلي حالياً:", err.message);
+                            setIsCloudActive(false);
+                        });
+                        return () => unsub();
+                    } catch (err) {
+                        setIsCloudActive(false);
                     }
-                }, (error) => {
-                    console.error("خطأ في الاتصال بقاعدة البيانات:", error);
-                    setLoading(false);
-                });
-
-                return () => unsubscribe();
+                }
             }, []);
 
             useEffect(() => {
@@ -154,112 +167,104 @@
             const handleAddBook = async (e) => {
                 e.preventDefault();
                 if (!newBook.title || !newBook.author || !newBook.price) {
-                    alert("يرجى ملء كافة الحقول الأساسية.");
+                    alert("يرجى ملء الحقول المطلوبة.");
                     return;
                 }
 
-                try {
-                    const bookData = {
-                        title: newBook.title,
-                        author: newBook.author,
-                        category: newBook.category,
-                        description: newBook.description || '',
-                        price: parseFloat(newBook.price),
-                        preview_pages: parseInt(newBook.preview_pages) || 5,
-                        pages: parseInt(newBook.pages) || 100,
-                        cover_image: newBook.cover_image || "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?auto=format&fit=crop&q=80&w=400",
-                        rating: 5.0,
-                        status: "new",
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                    };
+                const item = {
+                    title: newBook.title,
+                    author: newBook.author,
+                    category: newBook.category,
+                    price: parseFloat(newBook.price),
+                    pages: parseInt(newBook.pages) || 120,
+                    description: newBook.description || 'لا يوجد وصف متاح.',
+                    cover_image: newBook.cover_image || "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?auto=format&fit=crop&q=80&w=400",
+                    rating: 5.0
+                };
 
-                    await db.collection("books").add(bookData);
-
-                    setNewBook({
-                        title: '', author: '', description: '', category: 'إدارة وأعمال',
-                        price: '', preview_pages: 5, pages: 150, cover_image: ''
-                    });
-                    alert("تم حفظ الكتاب بنجاح داخل قاعدة البيانات السحابية!");
-                } catch (err) {
-                    alert("حدث خطأ أثناء الحفظ: " + err.message);
+                if (isCloudActive && db) {
+                    try {
+                        await db.collection("books").add(item);
+                    } catch (err) {
+                        const local = [{ id: 'loc_' + Date.now(), ...item }, ...books];
+                        setBooks(local);
+                        localStorage.setItem('wonderread_books', JSON.stringify(local));
+                    }
+                } else {
+                    const local = [{ id: 'loc_' + Date.now(), ...item }, ...books];
+                    setBooks(local);
+                    localStorage.setItem('wonderread_books', JSON.stringify(local));
                 }
+
+                setNewBook({ title: '', author: '', category: 'إدارة وأعمال', price: '', pages: 150, cover_image: '', description: '' });
+                alert("تمت إضافة الكتاب بنجاح!");
             };
 
             const handleDeleteBook = async (id) => {
-                if (confirm("هل أنت متأكد من حذف هذا الكتاب نهائياً من السحابة؟")) {
-                    try {
-                        await db.collection("books").doc(id).delete();
-                    } catch (err) {
-                        alert("حدث خطأ أثناء الحذف: " + err.message);
+                if (confirm("هل تريد حذف هذا الكتاب؟")) {
+                    if (isCloudActive && db) {
+                        try { await db.collection("books").doc(id).delete(); } catch(e){}
                     }
+                    const updated = books.filter(b => b.id !== id);
+                    setBooks(updated);
+                    localStorage.setItem('wonderread_books', JSON.stringify(updated));
                 }
             };
 
             return (
                 <div className="min-h-screen bg-luxuryBg text-white pb-20 select-none">
-                    <header className="sticky top-0 z-50 bg-luxuryBg/90 backdrop-blur-md border-b border-luxuryBorder px-4 py-3 flex justify-between items-center max-w-md mx-auto">
-                        <div className="flex items-center space-x-2 space-x-reverse" onClick={() => setCurrentScreen('home')}>
-                            <div className="w-9 h-9 bg-gradient-to-tr from-gold-dark to-gold rounded-lg flex items-center justify-center shadow-lg cursor-pointer">
-                                <span className="font-serif font-black text-black text-xl">W</span>
+                    {/* الترويسة */}
+                    <header className="sticky top-0 z-50 bg-luxuryBg/95 backdrop-blur-md border-b border-luxuryBorder px-4 py-3 flex justify-between items-center max-w-md mx-auto">
+                        <div className="flex items-center space-x-2 space-x-reverse cursor-pointer" onClick={() => setCurrentScreen('home')}>
+                            <div className="w-9 h-9 bg-gradient-to-tr from-gold-dark to-gold rounded-lg flex items-center justify-center shadow-lg font-serif font-black text-black text-xl">
+                                W
                             </div>
                             <div>
-                                <h1 className="text-lg font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-l from-gold to-white cursor-pointer">WonderRead</h1>
-                                <p className="text-[9px] text-gold/80 -mt-1 font-light">مكتبة سحابية حية</p>
+                                <h1 className="text-lg font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-l from-gold to-white">WonderRead</h1>
+                                <p className="text-[9px] text-gold/80 -mt-1 font-light">
+                                    {isCloudActive ? "سحابي متصل ✓" : "المكتبة الرقمية الفاخرة"}
+                                </p>
                             </div>
                         </div>
 
-                        <div className="flex items-center space-x-3 space-x-reverse">
-                            {user.role === 'super_admin' && (
-                                <button 
-                                    onClick={() => setCurrentScreen('admin')}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center space-x-1 space-x-reverse transition-all ${currentScreen === 'admin' ? 'bg-gold text-black' : 'bg-gold/10 text-gold border border-gold/30'}`}
-                                >
-                                    <i data-lucide="shield-check" className="w-3.5 h-3.5"></i>
-                                    <span>لوحة التحكم</span>
-                                </button>
-                            )}
+                        <div className="flex items-center space-x-2 space-x-reverse">
                             <button 
-                                onClick={() => setCurrentScreen('profile')}
-                                className="w-8 h-8 rounded-full border border-gold/30 flex items-center justify-center bg-luxuryCard hover:border-gold transition-colors"
+                                onClick={() => setCurrentScreen('admin')}
+                                className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center space-x-1 space-x-reverse transition-all ${currentScreen === 'admin' ? 'bg-gold text-black' : 'bg-gold/10 text-gold border border-gold/30'}`}
                             >
-                                <i data-lucide="user" className="w-4 h-4 text-gold"></i>
+                                <span>لوحة الإدارة</span>
                             </button>
                         </div>
                     </header>
 
+                    {/* جسم التطبيق */}
                     <main className="max-w-md mx-auto px-4 pt-4">
-                        {loading ? (
-                            <div className="text-center py-20 space-y-3">
-                                <div className="w-8 h-8 border-2 border-gold border-t-transparent rounded-full animate-spin mx-auto"></div>
-                                <p className="text-xs text-gold">جاري مزامنة الكتب مع السحابة...</p>
-                            </div>
-                        ) : null}
 
-                        {!loading && currentScreen === 'home' && (
+                        {/* 1. الرئيسية */}
+                        {currentScreen === 'home' && (
                             <div className="space-y-6">
-                                <div className="relative rounded-2xl overflow-hidden border border-gold/20 p-6 bg-gradient-to-br from-luxuryCard to-black shadow-2xl">
-                                    <span className="text-[10px] uppercase font-bold tracking-widest text-gold bg-gold/10 px-2.5 py-1 rounded-full border border-gold/20">المكتبة متصلة بالسحابة</span>
+                                <div className="rounded-2xl border border-gold/20 p-5 bg-gradient-to-br from-luxuryCard to-black shadow-xl">
+                                    <span className="text-[10px] font-bold text-gold bg-gold/10 px-2.5 py-1 rounded-full border border-gold/20">
+                                        نسخة متقدمة PWA
+                                    </span>
                                     <h2 className="text-xl font-extrabold mt-3 text-white leading-tight">عالم من المعرفة الفاخرة بين يديك</h2>
-                                    <p className="text-xs text-gray-400 mt-2 font-light leading-relaxed">قاعدة بيانات مباشرة، تصفح واقرأ وخصص محتواك بكل حرية.</p>
+                                    <p className="text-xs text-gray-400 mt-2 font-light">تصفح الكتب واقرأ العينات وأدر محتواك بكل حرية ومرونة.</p>
                                     <button 
                                         onClick={() => setCurrentScreen('library')}
-                                        className="mt-4 px-4 py-2 bg-gradient-to-l from-gold-dark to-gold text-black rounded-lg text-xs font-bold flex items-center space-x-1.5 space-x-reverse shadow-lg"
+                                        className="mt-4 px-4 py-2 bg-gradient-to-l from-gold-dark to-gold text-black rounded-lg text-xs font-bold shadow-lg"
                                     >
-                                        <span>استكشف المكتبة</span>
-                                        <i data-lucide="arrow-left" className="w-3.5 h-3.5"></i>
+                                        استكشف المكتبة الآن
                                     </button>
                                 </div>
 
                                 <div>
-                                    <div className="flex justify-between items-center mb-3">
-                                        <h3 className="text-sm font-bold border-r-2 border-gold pr-2">الأقسام المتاحة</h3>
-                                    </div>
-                                    <div className="flex space-x-2 space-x-reverse overflow-x-auto pb-2 scrollbar-none">
+                                    <h3 className="text-sm font-bold border-r-2 border-gold pr-2 mb-3">التصنيفات</h3>
+                                    <div className="flex space-x-2 space-x-reverse overflow-x-auto pb-1">
                                         {CATEGORIES.map(cat => (
                                             <button 
                                                 key={cat}
                                                 onClick={() => { setSelectedCategory(cat); setCurrentScreen('library'); }}
-                                                className="px-4 py-1.5 rounded-full text-xs font-semibold bg-luxuryCard border border-luxuryBorder text-gray-300 whitespace-nowrap active:border-gold"
+                                                className="px-3.5 py-1 rounded-full text-xs bg-luxuryCard border border-luxuryBorder text-gray-300 whitespace-nowrap active:border-gold"
                                             >
                                                 {cat}
                                             </button>
@@ -268,26 +273,23 @@
                                 </div>
 
                                 <div>
-                                    <h3 className="text-sm font-bold border-r-2 border-gold pr-2 mb-4">الكتب المتاحة ({books.length})</h3>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        {books.map(book => (
+                                    <h3 className="text-sm font-bold border-r-2 border-gold pr-2 mb-3">أحدث الكتب ({books.length})</h3>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {books.map(b => (
                                             <div 
-                                                key={book.id} 
-                                                onClick={() => { setSelectedBook(book); setCurrentScreen('details'); }}
-                                                className="bg-luxuryCard border border-luxuryBorder rounded-xl overflow-hidden hover:border-gold/40 transition-all cursor-pointer group"
+                                                key={b.id} 
+                                                onClick={() => { setSelectedBook(b); setCurrentScreen('details'); }}
+                                                className="bg-luxuryCard border border-luxuryBorder rounded-xl overflow-hidden cursor-pointer hover:border-gold/40 transition-all"
                                             >
-                                                <div className="relative aspect-[3/4] overflow-hidden">
-                                                    <img src={book.cover_image} alt={book.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                                                    <div className="absolute top-2 left-2 bg-black/80 px-1.5 py-0.5 rounded text-[9px] font-bold text-gold border border-gold/30">
-                                                        {book.price === 0 ? "مجاني" : `${book.price} $`}
-                                                    </div>
+                                                <div className="aspect-[3/4] overflow-hidden bg-black/40">
+                                                    <img src={b.cover_image} alt={b.title} className="w-full h-full object-cover" />
                                                 </div>
-                                                <div className="p-3 space-y-1">
-                                                    <h4 className="text-xs font-bold text-gray-200 line-clamp-1">{book.title}</h4>
-                                                    <p className="text-[10px] text-gray-400 line-clamp-1">{book.author}</p>
-                                                    <div className="flex justify-between items-center pt-1 border-t border-luxuryBorder/50">
-                                                        <span className="text-[9px] text-gray-500">{book.category}</span>
-                                                        <span className="text-[9px] text-gold flex items-center"><i data-lucide="star" className="w-2.5 h-2.5 fill-gold stroke-none ml-0.5"></i>{book.rating || 5}</span>
+                                                <div className="p-2.5 space-y-1">
+                                                    <h4 className="text-xs font-bold text-white line-clamp-1">{b.title}</h4>
+                                                    <p className="text-[10px] text-gray-400 line-clamp-1">{b.author}</p>
+                                                    <div className="flex justify-between items-center pt-1 border-t border-luxuryBorder">
+                                                        <span className="text-[9px] text-gold font-bold">{b.price} $</span>
+                                                        <span className="text-[9px] text-gray-400">{b.category}</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -297,55 +299,153 @@
                             </div>
                         )}
 
-                        {!loading && currentScreen === 'library' && (
-                            <div className="space-y-4">
-                                <div className="relative">
-                                    <input 
-                                        type="text" 
-                                        placeholder="ابحث في الكتب المتاحة..." 
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="w-full bg-luxuryCard border border-luxuryBorder rounded-xl py-3 pr-10 pl-4 text-xs focus:border-gold focus:outline-none"
-                                    />
-                                    <i data-lucide="search" className="w-4 h-4 text-gray-400 absolute right-3.5 top-3.5"></i>
+                        {/* 2. تفاصيل الكتاب */}
+                        {currentScreen === 'details' && selectedBook && (
+                            <div className="space-y-5">
+                                <button onClick={() => setCurrentScreen('home')} className="text-xs text-gold flex items-center gap-1">
+                                    <span>← العودة للرئيسية</span>
+                                </button>
+                                <div className="text-center">
+                                    <div className="w-40 aspect-[3/4] mx-auto rounded-xl overflow-hidden shadow-2xl border border-gold/30 mb-3">
+                                        <img src={selectedBook.cover_image} alt={selectedBook.title} className="w-full h-full object-cover" />
+                                    </div>
+                                    <h2 className="text-base font-black text-white">{selectedBook.title}</h2>
+                                    <p className="text-xs text-gold mt-0.5">{selectedBook.author}</p>
+                                </div>
+                                <div className="bg-luxuryCard p-3 rounded-xl border border-luxuryBorder text-xs text-gray-300 leading-relaxed">
+                                    {selectedBook.description}
+                                </div>
+                                <button 
+                                    onClick={() => { setReaderBook(selectedBook); setCurrentPage(1); setCurrentScreen('reader'); }}
+                                    className="w-full py-3 bg-gradient-to-l from-gold-dark to-gold text-black rounded-xl font-bold text-xs shadow-lg"
+                                >
+                                    فتح القارئ الفاخر
+                                </button>
+                            </div>
+                        )}
+
+                        {/* 3. القارئ الآمن */}
+                        {currentScreen === 'reader' && readerBook && (
+                            <div className={`p-4 rounded-2xl min-h-[480px] flex flex-col justify-between border border-luxuryBorder ${isNightMode ? 'bg-[#121212] text-gray-100' : 'bg-gray-100 text-gray-900'}`}>
+                                <div className="flex justify-between items-center border-b border-luxuryBorder/40 pb-2">
+                                    <button onClick={() => setCurrentScreen('details')} className="text-xs text-gold font-bold">← خروج</button>
+                                    <span className="text-xs font-bold truncate max-w-[150px]">{readerBook.title}</span>
+                                    <button onClick={() => setIsNightMode(!isNightMode)} className="text-xs bg-luxuryCard px-2 py-1 rounded border border-luxuryBorder text-gold">
+                                        {isNightMode ? "نهار" : "ليل"}
+                                    </button>
+                                </div>
+                                <div className="py-10 text-center space-y-4">
+                                    <h3 className="text-xs font-bold text-gold">الصفحة {currentPage} من {readerBook.pages}</h3>
+                                    <p className="text-xs leading-loose px-4">
+                                        هذا النص النموذجي للقراءة الآمنة والمحمية داخل WonderRead. يمكنك ربط وتضمين ملفات الكتب كاملة مستقبلاً بكل سهولة.
+                                    </p>
+                                </div>
+                                <div className="flex justify-between pt-3 border-t border-luxuryBorder/40 text-xs">
+                                    <button 
+                                        disabled={currentPage <= 1} 
+                                        onClick={() => setCurrentPage(c => c - 1)}
+                                        className="px-4 py-2 bg-luxuryCard text-white border border-luxuryBorder rounded-lg disabled:opacity-30"
+                                    >
+                                        السابق
+                                    </button>
+                                    <button 
+                                        onClick={() => setCurrentPage(c => c + 1)}
+                                        className="px-4 py-2 bg-luxuryCard text-white border border-luxuryBorder rounded-lg"
+                                    >
+                                        التالي
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 4. لوحة الإدارة */}
+                        {currentScreen === 'admin' && (
+                            <div className="space-y-5">
+                                <div className="flex justify-between items-center">
+                                    <h2 className="text-sm font-black text-gold">لوحة إدارة المكتبة</h2>
+                                    <button onClick={() => setCurrentScreen('home')} className="text-xs text-gray-400">العودة للرئيسية</button>
                                 </div>
 
-                                <div className="flex space-x-2 space-x-reverse overflow-x-auto pb-1">
-                                    {CATEGORIES.map(cat => (
-                                        <button 
-                                            key={cat}
-                                            onClick={() => setSelectedCategory(cat)}
-                                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${selectedCategory === cat ? 'bg-gold text-black font-bold' : 'bg-luxuryCard border border-luxuryBorder text-gray-400'}`}
-                                        >
-                                            {cat}
-                                        </button>
-                                    ))}
-                                </div>
+                                <form onSubmit={handleAddBook} className="bg-luxuryCard p-4 rounded-xl border border-luxuryBorder space-y-3 text-xs">
+                                    <h3 className="font-bold text-white mb-2">إضافة كتاب جديد</h3>
+                                    <div>
+                                        <label className="text-gray-400 block mb-1">عنوان الكتاب *</label>
+                                        <input type="text" value={newBook.title} onChange={e => setNewBook({...newBook, title: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white" placeholder="اسم الكتاب" required />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="text-gray-400 block mb-1">الكاتب *</label>
+                                            <input type="text" value={newBook.author} onChange={e => setNewBook({...newBook, author: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white" required />
+                                        </div>
+                                        <div>
+                                            <label className="text-gray-400 block mb-1">السعر ($) *</label>
+                                            <input type="number" step="0.01" value={newBook.price} onChange={e => setNewBook({...newBook, price: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white" required />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-gray-400 block mb-1">رابط صورة الغلاف</label>
+                                        <input type="url" value={newBook.cover_image} onChange={e => setNewBook({...newBook, cover_image: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white" placeholder="https://..." />
+                                    </div>
+                                    <div>
+                                        <label className="text-gray-400 block mb-1">نبذة قصيرة</label>
+                                        <textarea rows="2" value={newBook.description} onChange={e => setNewBook({...newBook, description: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white"></textarea>
+                                    </div>
+                                    <button type="submit" className="w-full py-2.5 bg-gradient-to-l from-gold-dark to-gold text-black font-bold rounded-lg mt-2">
+                                        حفظ الكتاب في المكتبة
+                                    </button>
+                                </form>
 
-                                <div className="grid grid-cols-2 gap-4 pt-2">
-                                    {books.filter(b => {
-                                        const matchesSearch = b.title.includes(searchQuery) || b.author.includes(searchQuery);
-                                        const matchesCat = selectedCategory === 'الكل' || b.category === selectedCategory;
-                                        return matchesSearch && matchesCat;
-                                    }).map(book => (
-                                        <div 
-                                            key={book.id}
-                                            onClick={() => { setSelectedBook(book); setCurrentScreen('details'); }}
-                                            className="bg-luxuryCard border border-luxuryBorder rounded-xl overflow-hidden hover:border-gold/40 transition-all cursor-pointer"
-                                        >
-                                            <div className="relative aspect-[3/4] overflow-hidden">
-                                                <img src={book.cover_image} alt={book.title} className="w-full h-full object-cover" />
+                                <div className="space-y-2">
+                                    <h4 className="text-xs font-bold text-gray-300">الكتب المسجلة ({books.length})</h4>
+                                    {books.map(b => (
+                                        <div key={b.id} className="bg-luxuryCard p-2.5 rounded-lg border border-luxuryBorder flex justify-between items-center text-xs">
+                                            <div className="truncate max-w-[200px]">
+                                                <p className="font-bold text-white truncate">{b.title}</p>
+                                                <p className="text-[10px] text-gray-400">{b.author} | {b.price} $</p>
                                             </div>
-                                            <div className="p-3 space-y-1">
-                                                <h4 className="text-xs font-bold text-gray-200 line-clamp-1">{book.title}</h4>
-                                                <p className="text-[10px] text-gray-400">{book.author}</p>
-                                                <div className="flex justify-between items-center pt-1.5 border-t border-luxuryBorder">
-                                                    <span className="text-[9px] text-gold font-bold">{book.price} $</span>
-                                                    <span className="text-[9px] text-gray-500">{book.pages} صفحة</span>
-                                                </div>
-                                            </div>
+                                            <button onClick={() => handleDeleteBook(b.id)} className="text-red-400 px-2 py-1 rounded hover:bg-red-950/40">حذف</button>
                                         </div>
                                     ))}
                                 </div>
                             </div>
-                   
+                        )}
+
+                        {/* 5. المكتبة الشاملة */}
+                        {currentScreen === 'library' && (
+                            <div className="space-y-4">
+                                <input 
+                                    type="text" 
+                                    placeholder="ابحث عن كتاب أو كاتب..." 
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    className="w-full bg-luxuryCard border border-luxuryBorder rounded-xl p-3 text-xs text-white focus:outline-none"
+                                />
+                                <div className="grid grid-cols-2 gap-3">
+                                    {books.filter(b => (selectedCategory === 'الكل' || b.category === selectedCategory) && (b.title.includes(searchQuery) || b.author.includes(searchQuery))).map(b => (
+                                        <div key={b.id} onClick={() => { setSelectedBook(b); setCurrentScreen('details'); }} className="bg-luxuryCard border border-luxuryBorder rounded-xl p-2 cursor-pointer">
+                                            <img src={b.cover_image} className="aspect-[3/4] w-full object-cover rounded-lg mb-2" />
+                                            <h4 className="text-xs font-bold truncate">{b.title}</h4>
+                                            <span className="text-[10px] text-gold">{b.price} $</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                    </main>
+
+                    {/* القائمة السفلية */}
+                    <nav className="fixed bottom-0 left-0 right-0 bg-[#0D0D0D]/95 border-t border-luxuryBorder py-2.5 px-6 flex justify-around items-center max-w-md mx-auto z-40 text-xs">
+                        <button onClick={() => setCurrentScreen('home')} className={`font-bold ${currentScreen === 'home' ? 'text-gold' : 'text-gray-500'}`}>الرئيسية</button>
+                        <button onClick={() => setCurrentScreen('library')} className={`font-bold ${currentScreen === 'library' ? 'text-gold' : 'text-gray-500'}`}>المكتبة</button>
+                        <button onClick={() => setCurrentScreen('admin')} className={`font-bold ${currentScreen === 'admin' ? 'text-gold' : 'text-gray-500'}`}>الإدارة</button>
+                    </nav>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<WonderReadApp />);
+    </script>
+</body>
+</html>

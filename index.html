@@ -63,7 +63,7 @@
         </div>
     </header>
 
-    <!-- المحتوى الرئيسي -->
+    <!-- المحتوى الرئيسي للمكتبة -->
     <main id="app-container" class="max-w-md mx-auto px-4 pt-4"></main>
 
     <!-- شريط التنقل السفلي -->
@@ -73,7 +73,7 @@
         <button onclick="showScreen('admin')" id="nav-admin" class="font-bold text-gray-500">الإدارة</button>
     </nav>
 
-    <!-- نافذة الشكاوى المنبثقة -->
+    <!-- نافذة الشكاوى -->
     <div id="modal-complaint" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-luxuryCard border border-luxuryBorder p-5 rounded-2xl w-full max-w-sm space-y-4">
             <div class="flex justify-between items-center border-b border-luxuryBorder pb-2">
@@ -94,7 +94,7 @@
         </div>
     </div>
 
-    <!-- نافذة الدفع عبر بايننس -->
+    <!-- نافذة الدفع بايننس -->
     <div id="modal-payment" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-luxuryCard border border-luxuryBorder p-5 rounded-2xl w-full max-w-sm space-y-4 text-xs">
             <div class="flex justify-between items-center border-b border-luxuryBorder pb-2">
@@ -109,7 +109,7 @@
                 </div>
                 <div class="flex justify-between text-gray-400">
                     <span>الشبكة المعتمدة:</span>
-                    <span class="text-white font-bold">BNB Smart Chain (BEP20) / Tron</span>
+                    <span class="text-white font-bold">BNB Smart Chain (BEP20) / TRC20</span>
                 </div>
             </div>
             <div>
@@ -127,7 +127,7 @@
         </div>
     </div>
 
-    <!-- السكربت المباشر الفائق -->
+    <!-- السكربت المباشر الفوري -->
     <script>
         const BINANCE_ADDR = "0x71c2b5e1974780447385012586f189f7831fbe61";
         const CATEGORIES = ["الكل", "إدارة وأعمال", "تاريخ", "تكنولوجيا", "تطوير ذات", "روايات"];
@@ -144,11 +144,39 @@
                 pdf_url: "",
                 price: 15.00,
                 pages: 280
+            },
+            {
+                id: "b2",
+                title: "رحلة في غياهب التاريخ العربي",
+                author: "أ. سارة الهاشمي",
+                description: "دراسة تاريخية معاصرة تكشف خفايا الأحداث والتحولات الكبرى في المشرق العربي.",
+                category: "تاريخ",
+                cover_image: "https://images.unsplash.com/photo-1506880018603-83d5b814b5a6?auto=format&fit=crop&q=80&w=400",
+                pdf_url: "",
+                price: 29.99,
+                pages: 340
             }
         ];
 
-        let books = JSON.parse(localStorage.getItem('wonderread_books') || 'null') || INITIAL_BOOKS;
-        let comments = JSON.parse(localStorage.getItem('wonderread_comments') || '{}');
+        let books = INITIAL_BOOKS;
+        try {
+            const saved = localStorage.getItem('wonderread_books');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed) && parsed.length > 0) books = parsed;
+            }
+        } catch (e) {
+            books = INITIAL_BOOKS;
+        }
+
+        let comments = {};
+        try {
+            const savedC = localStorage.getItem('wonderread_comments');
+            if (savedC) comments = JSON.parse(savedC);
+        } catch (e) {
+            comments = {};
+        }
+
         let currentScreen = 'home';
         let selectedBook = null;
         let activePayingBook = null;
@@ -169,120 +197,4 @@
                 if (window.firebase) {
                     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
                     db = firebase.firestore();
-                    syncWithCloud();
-                }
-            } catch (e) {
-                console.warn("السحابة تعمل محلياً:", e);
-            }
-        }
-
-        function syncWithCloud() {
-            if (!db) return;
-            db.collection("books").onSnapshot(snap => {
-                if (!snap.empty) {
-                    books = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    localStorage.setItem('wonderread_books', JSON.stringify(books));
-                    isCloudActive = true;
-                    const statusEl = document.getElementById('cloud-status');
-                    if (statusEl) statusEl.innerText = "سحابي متصل ✓";
-                    render();
-                } else {
-                    INITIAL_BOOKS.forEach(b => db.collection("books").add(b));
-                }
-            }, () => {
-                const statusEl = document.getElementById('cloud-status');
-                if (statusEl) statusEl.innerText = "المكتبة الرقمية (محلي)";
-            });
-
-            db.collection("comments").onSnapshot(snap => {
-                const cMap = {};
-                snap.forEach(doc => {
-                    const d = doc.data();
-                    if (!cMap[d.bookId]) cMap[d.bookId] = [];
-                    cMap[d.bookId].push({ id: doc.id, ...d });
-                });
-                comments = cMap;
-                localStorage.setItem('wonderread_comments', JSON.stringify(comments));
-                if (currentScreen === 'details') render();
-            });
-        }
-
-        function compressImage(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = e => {
-                    const img = new Image();
-                    img.src = e.target.result;
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        let w = img.width, h = img.height;
-                        if (w > 450) { h = Math.round((h * 450) / w); w = 450; }
-                        canvas.width = w; canvas.height = h;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, w, h);
-                        resolve(canvas.toDataURL('image/jpeg', 0.7));
-                    };
-                    img.onerror = reject;
-                };
-                reader.onerror = reject;
-            });
-        }
-
-        async function handleImageFile(e) {
-            const file = e.target.files[0];
-            if (file) {
-                try {
-                    uploadedCoverBase64 = await compressImage(file);
-                    const prev = document.getElementById('cover-preview-img');
-                    if (prev) {
-                        prev.src = uploadedCoverBase64;
-                        prev.classList.remove('hidden');
-                    }
-                } catch (err) {
-                    alert("تعذر قراءة الصورة، يرجى اختيار ملف صورة صالح.");
-                }
-            }
-        }
-
-        function showScreen(screen, bookId = null) {
-            currentScreen = screen;
-            if (bookId) selectedBook = books.find(b => b.id === bookId);
-            
-            ['home', 'library', 'admin'].forEach(s => {
-                const el = document.getElementById('nav-' + s);
-                if (el) el.className = (s === screen) ? "font-bold text-gold" : "font-bold text-gray-500";
-            });
-            render();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        function render() {
-            const container = document.getElementById('app-container');
-            if (!container) return;
-
-            if (currentScreen === 'home') {
-                container.innerHTML = `
-                    <div class="space-y-6">
-                        <div class="rounded-2xl border border-gold/20 p-5 bg-gradient-to-br from-luxuryCard to-black shadow-xl">
-                            <span class="text-[10px] font-bold text-gold bg-gold/10 px-2.5 py-1 rounded-full border border-gold/20">منصة القراءة الحرة</span>
-                            <h2 class="text-xl font-extrabold mt-3 text-white leading-tight">عالم من المعرفة الفاخرة بين يديك</h2>
-                            <p class="text-xs text-gray-400 mt-2 font-light">تصفح الكتب واقرأ التعليقات وتفاعل مع نخبة القراء بأمان تام.</p>
-                            <button onclick="showScreen('library')" class="mt-4 px-4 py-2 bg-gradient-to-l from-gold-dark to-gold text-black rounded-lg text-xs font-bold shadow-lg">استكشف المكتبة الآن</button>
-                        </div>
-
-                        <div>
-                            <h3 class="text-sm font-bold border-r-2 border-gold pr-2 mb-3">التصنيفات</h3>
-                            <div class="flex space-x-2 space-x-reverse overflow-x-auto pb-1">
-                                ${CATEGORIES.map(cat => `
-                                    <button onclick="selectedCategory='${cat}'; showScreen('library');" class="px-3.5 py-1 rounded-full text-xs bg-luxuryCard border border-luxuryBorder text-gray-300 whitespace-nowrap active:border-gold">${cat}</button>
-                                `).join('')}
-                            </div>
-                        </div>
-
-                        <div>
-                            <h3 class="text-sm font-bold border-r-2 border-gold pr-2 mb-3">أحدث الكتب المتاحة (${books.length})</h3>
-                            <div class="grid grid-cols-2 gap-3">
-                                ${books.map(b => `
-                                    <div onclick="showScreen('details', '${b.id}')" class="bg-luxuryCard border border-luxuryBorder rounded-xl overflow-hidden cursor-pointer hover:border-gold/40 transition-all">
-                                        <div class="
+                    sync

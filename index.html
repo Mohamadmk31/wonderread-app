@@ -57,7 +57,6 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // عنوان محفظة بايننس الخاص بك لاستقبال المدفوعات
         const BINANCE_USDT_ADDRESS = "0x71c2b5e1974780447385012586f189f7831fbe61";
 
         let db = null;
@@ -89,13 +88,13 @@
                 pdf_url: "",
                 price: 15.00,
                 pages: 280,
-                rating: 4.8
+                rating: 4.8,
+                status: "approved"
             }
         ];
 
         const CATEGORIES = ["الكل", "إدارة وأعمال", "تاريخ", "تكنولوجيا", "تطوير ذات", "روايات"];
 
-        // دالة تصغير وضغط صورة الغلاف برمجياً لتفادي أخطاء السعة
         const compressImage = (file, maxWidth = 420, quality = 0.7) => {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -124,8 +123,11 @@
         };
 
         function WonderReadApp() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const isAdminMode = urlParams.get('admin') === 'true' || urlParams.get('admin') === '1';
+
             const [currentScreen, setCurrentScreen] = useState('home');
-            const [books, setBooks] = useState(() => {
+            const [allBooks, setAllBooks] = useState(() => {
                 try {
                     const saved = localStorage.getItem('wonderread_books');
                     return saved ? JSON.parse(saved) : INITIAL_BOOKS;
@@ -140,13 +142,13 @@
             const [readerBook, setReaderBook] = useState(null);
             const [isNightMode, setIsNightMode] = useState(true);
 
-            // حالات الدفع عبر بايننس
+            // حالات الدفع
             const [showPaymentModal, setShowPaymentModal] = useState(false);
             const [txidInput, setTxidInput] = useState('');
 
-            // بيانات الكتاب الجديد
+            // نموذج إضافة / اقتراح كتاب
             const [newBook, setNewBook] = useState({
-                title: '', author: '', category: 'إدارة وأعمال', price: '', pages: 150, cover_image: '', pdf_url: '', description: ''
+                title: '', author: '', category: 'إدارة وأعمال', price: '', pages: 120, cover_image: '', pdf_url: '', description: '', submitterContact: ''
             });
             const [coverPreview, setCoverPreview] = useState(null);
             const [isSubmitting, setIsSubmitting] = useState(false);
@@ -157,7 +159,7 @@
                         const unsub = db.collection("books").onSnapshot(snapshot => {
                             if (!snapshot.empty) {
                                 const cloudData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                                setBooks(cloudData);
+                                setAllBooks(cloudData);
                                 localStorage.setItem('wonderread_books', JSON.stringify(cloudData));
                                 setIsCloudActive(true);
                             } else {
@@ -172,7 +174,11 @@
                 }
             }, []);
 
-            // رفع وضغط صورة الغلاف
+            // الكتب المقبولة فقط التي تظهر للجمهور
+            const publicBooks = allBooks.filter(b => b.status === "approved" || !b.status);
+            // الكتب المعلقة التي تنتظر موافقة الأدمن
+            const pendingBooks = allBooks.filter(b => b.status === "pending");
+
             const handleImageUpload = async (e) => {
                 const file = e.target.files[0];
                 if (file) {
@@ -181,12 +187,13 @@
                         setCoverPreview(compressedBase64);
                         setNewBook(prev => ({ ...prev, cover_image: compressedBase64 }));
                     } catch (err) {
-                        alert("حدث خطأ في معالجة الصورة، يرجى تجربة صورة أخرى.");
+                        alert("حدث خطأ في معالجة الصورة.");
                     }
                 }
             };
 
-            const handleAddBook = async (e) => {
+            // تقديم كتاب (سواء من المشرف مباشرة أو من مؤلف زائر)
+            const handleAddBook = async (e, isDirectAdmin = false) => {
                 e.preventDefault();
                 if (!newBook.title || !newBook.author || newBook.price === '') {
                     alert("يرجى ملء الحقول المطلوبة (*)");
@@ -205,6 +212,8 @@
                     cover_image: newBook.cover_image || defaultCover,
                     pdf_url: newBook.pdf_url || '',
                     rating: 5.0,
+                    status: isDirectAdmin ? "approved" : "pending", // إذا كان من الزائر يوضع معلقاً
+                    submitterContact: newBook.submitterContact || '',
                     createdAt: new Date().toISOString()
                 };
 
@@ -212,397 +221,15 @@
                     if (isCloudActive && db) {
                         await db.collection("books").add(item);
                     } else {
-                        const local = [{ id: 'loc_' + Date.now(), ...item }, ...books];
-                        setBooks(local);
+                        const local = [{ id: 'loc_' + Date.now(), ...item }, ...allBooks];
+                        setAllBooks(local);
                         localStorage.setItem('wonderread_books', JSON.stringify(local));
                     }
-                    alert("تم حفظ الكتاب بنجاح!");
-                    setNewBook({ title: '', author: '', category: 'إدارة وأعمال', price: '', pages: 150, cover_image: '', pdf_url: '', description: '' });
-                    setCoverPreview(null);
-                } catch (err) {
-                    alert("حدث خطأ أثناء الحفظ: " + err.message);
-                } finally {
-                    setIsSubmitting(false);
-                }
-            };
 
-            const handleDeleteBook = async (id) => {
-                if (confirm("هل تريد حذف هذا الكتاب نهائياً من المكتبة؟")) {
-                    if (isCloudActive && db) {
-                        try { await db.collection("books").doc(id).delete(); } catch(e){}
+                    if (isDirectAdmin) {
+                        alert("تم نشر الكتاب مباشرة في المكتبة بنجاح!");
+                    } else {
+                        alert("شكراً لك! تم إرسال ملفك بنجاح وهو الآن بانتظار مراجعة وموافقة الإدارة قبل نشره.");
                     }
-                    const updated = books.filter(b => b.id !== id);
-                    setBooks(updated);
-                    localStorage.setItem('wonderread_books', JSON.stringify(updated));
-                }
-            };
 
-            // نسخ عنوان المحفظة
-            const handleCopyAddress = () => {
-                navigator.clipboard.writeText(BINANCE_USDT_ADDRESS);
-                alert("تم نسخ عنوان محفظة بايننس بنجاح!");
-            };
-
-            // تأكيد عملية الدفع
-            const handleConfirmPayment = () => {
-                if (!txidInput.trim()) {
-                    alert("يرجى إدخال رقم العملية (TXID / Order ID) للتحقق من وصول المبلغ.");
-                    return;
-                }
-                alert(`شكراً لك! تم استلام رقم التحويل (${txidInput.trim()}) لكتاب "${selectedBook.title}". سيتم التحقق من العملية وتفعيل القراءة.`);
-                setShowPaymentModal(false);
-                setTxidInput('');
-            };
-
-            return (
-                <div className="min-h-screen bg-luxuryBg text-white pb-20 select-none">
-                    {/* الترويسة */}
-                    <header className="sticky top-0 z-40 bg-luxuryBg/95 backdrop-blur-md border-b border-luxuryBorder px-4 py-3 flex justify-between items-center max-w-md mx-auto">
-                        <div className="flex items-center space-x-2 space-x-reverse cursor-pointer" onClick={() => setCurrentScreen('home')}>
-                            <div className="w-9 h-9 bg-gradient-to-tr from-gold-dark to-gold rounded-lg flex items-center justify-center shadow-lg font-serif font-black text-black text-xl">
-                                W
-                            </div>
-                            <div>
-                                <h1 className="text-lg font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-l from-gold to-white">WonderRead</h1>
-                                <p className="text-[9px] text-gold/80 -mt-1 font-light">
-                                    {isCloudActive ? "سحابي متصل ✓" : "المكتبة الرقمية الفاخرة"}
-                                </p>
-                            </div>
-                        </div>
-
-                        <button 
-                            onClick={() => setCurrentScreen('admin')}
-                            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${currentScreen === 'admin' ? 'bg-gold text-black' : 'bg-gold/10 text-gold border border-gold/30'}`}
-                        >
-                            لوحة الإدارة
-                        </button>
-                    </header>
-
-                    {/* جسم التطبيق */}
-                    <main className="max-w-md mx-auto px-4 pt-4">
-
-                        {/* 1. الرئيسية */}
-                        {currentScreen === 'home' && (
-                            <div className="space-y-6">
-                                <div className="rounded-2xl border border-gold/20 p-5 bg-gradient-to-br from-luxuryCard to-black shadow-xl">
-                                    <span className="text-[10px] font-bold text-gold bg-gold/10 px-2.5 py-1 rounded-full border border-gold/20">
-                                        المكتبة الفاخرة
-                                    </span>
-                                    <h2 className="text-xl font-extrabold mt-3 text-white leading-tight">عالم من المعرفة الفاخرة بين يديك</h2>
-                                    <p className="text-xs text-gray-400 mt-2 font-light">تصفح الكتب واقرأ العينات وأدر محتواك بكل حرية ومرونة.</p>
-                                    <button 
-                                        onClick={() => setCurrentScreen('library')}
-                                        className="mt-4 px-4 py-2 bg-gradient-to-l from-gold-dark to-gold text-black rounded-lg text-xs font-bold shadow-lg"
-                                    >
-                                        استكشف المكتبة الآن
-                                    </button>
-                                </div>
-
-                                <div>
-                                    <h3 className="text-sm font-bold border-r-2 border-gold pr-2 mb-3">التصنيفات</h3>
-                                    <div className="flex space-x-2 space-x-reverse overflow-x-auto pb-1">
-                                        {CATEGORIES.map(cat => (
-                                            <button 
-                                                key={cat}
-                                                onClick={() => { setSelectedCategory(cat); setCurrentScreen('library'); }}
-                                                className="px-3.5 py-1 rounded-full text-xs bg-luxuryCard border border-luxuryBorder text-gray-300 whitespace-nowrap active:border-gold"
-                                            >
-                                                {cat}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <h3 className="text-sm font-bold border-r-2 border-gold pr-2 mb-3">أحدث الكتب ({books.length})</h3>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {books.map(b => (
-                                            <div 
-                                                key={b.id} 
-                                                onClick={() => { setSelectedBook(b); setCurrentScreen('details'); }}
-                                                className="bg-luxuryCard border border-luxuryBorder rounded-xl overflow-hidden cursor-pointer hover:border-gold/40 transition-all"
-                                            >
-                                                <div className="aspect-[3/4] overflow-hidden bg-black/40">
-                                                    <img src={b.cover_image} alt="" className="w-full h-full object-cover" />
-                                                </div>
-                                                <div className="p-2.5 space-y-1">
-                                                    <h4 className="text-xs font-bold text-white line-clamp-1">{b.title}</h4>
-                                                    <p className="text-[10px] text-gray-400 line-clamp-1">{b.author}</p>
-                                                    <div className="flex justify-between items-center pt-1 border-t border-luxuryBorder">
-                                                        <span className="text-[9px] text-gold font-bold">{b.price === 0 ? "مجاني" : `${b.price} $`}</span>
-                                                        <span className="text-[9px] text-gray-400">{b.category}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* 2. تفاصيل الكتاب مع زر الدفع بايننس */}
-                        {currentScreen === 'details' && selectedBook && (
-                            <div className="space-y-5">
-                                <button onClick={() => setCurrentScreen('home')} className="text-xs text-gold flex items-center gap-1">
-                                    <span>← العودة للرئيسية</span>
-                                </button>
-                                <div className="text-center">
-                                    <div className="w-40 aspect-[3/4] mx-auto rounded-xl overflow-hidden shadow-2xl border border-gold/30 mb-3">
-                                        <img src={selectedBook.cover_image} alt="" className="w-full h-full object-cover" />
-                                    </div>
-                                    <h2 className="text-base font-black text-white">{selectedBook.title}</h2>
-                                    <p className="text-xs text-gold mt-0.5">{selectedBook.author}</p>
-                                    <p className="text-xs text-emerald-400 font-bold mt-1">
-                                        {selectedBook.price === 0 ? "كتاب متاح مجاناً" : `السعر: ${selectedBook.price} USDT (دولار)`}
-                                    </p>
-                                </div>
-
-                                <div className="bg-luxuryCard p-3 rounded-xl border border-luxuryBorder text-xs text-gray-300 leading-relaxed">
-                                    <h4 className="text-gold font-bold mb-1">نبذة عن الكتاب:</h4>
-                                    {selectedBook.description}
-                                </div>
-
-                                <div className="space-y-2">
-                                    {/* زر الدفع عبر بايننس للكتب المدفوعة */}
-                                    {selectedBook.price > 0 && (
-                                        <button 
-                                            onClick={() => setShowPaymentModal(true)}
-                                            className="w-full py-3 bg-gradient-to-l from-yellow-600 to-yellow-500 text-black rounded-xl font-bold text-xs flex justify-center items-center gap-2 shadow-lg"
-                                        >
-                                            <span>🟡 شراء الكتاب عبر محفظة بايننس (Binance USDT)</span>
-                                        </button>
-                                    )}
-
-                                    <button 
-                                        onClick={() => { setReaderBook(selectedBook); setCurrentScreen('reader'); }}
-                                        className="w-full py-3 bg-gradient-to-l from-gold-dark to-gold text-black rounded-xl font-bold text-xs shadow-lg"
-                                    >
-                                        فتح وقراءة الكتاب
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* 3. قارئ الكتاب */}
-                        {currentScreen === 'reader' && readerBook && (
-                            <div className={`p-4 rounded-2xl min-h-[550px] flex flex-col justify-between border border-luxuryBorder relative overflow-hidden ${isNightMode ? 'bg-[#121212] text-gray-100' : 'bg-white text-gray-900'}`}>
-                                <div className="flex justify-between items-center border-b border-luxuryBorder/40 pb-2 z-20">
-                                    <button onClick={() => setCurrentScreen('details')} className="text-xs text-gold font-bold">← إغلاق</button>
-                                    <span className="text-xs font-bold truncate max-w-[150px]">{readerBook.title}</span>
-                                    <button onClick={() => setIsNightMode(!isNightMode)} className="text-xs bg-luxuryCard px-2 py-1 rounded border border-luxuryBorder text-gold">
-                                        {isNightMode ? "نهار" : "ليل"}
-                                    </button>
-                                </div>
-
-                                <div className="flex-grow flex flex-col justify-center items-center py-4 z-20">
-                                    {readerBook.pdf_url ? (
-                                        <iframe 
-                                            src={readerBook.pdf_url} 
-                                            className="w-full h-[450px] rounded-lg border border-luxuryBorder"
-                                            title="PDF"
-                                        />
-                                    ) : (
-                                        <div className="text-center space-y-4 px-4">
-                                            <h3 className="text-sm font-bold text-gold">محتوى الكتاب</h3>
-                                            <p className="text-xs leading-loose">
-                                                لم يُرفق رابط PDF لهذا الكتاب. أضف رابط ملف PDF في لوحة الإدارة ليظهر كاملاً هنا.
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* 4. لوحة الإدارة */}
-                        {currentScreen === 'admin' && (
-                            <div className="space-y-5">
-                                <div className="flex justify-between items-center">
-                                    <h2 className="text-sm font-black text-gold">إدارة محتوى المكتبة</h2>
-                                    <button onClick={() => setCurrentScreen('home')} className="text-xs text-gray-400">العودة للرئيسية</button>
-                                </div>
-
-                                <form onSubmit={handleAddBook} className="bg-luxuryCard p-4 rounded-xl border border-luxuryBorder space-y-3.5 text-xs">
-                                    <h3 className="font-bold text-white border-b border-luxuryBorder pb-2">إضافة كتاب جديد</h3>
-                                    
-                                    <div>
-                                        <label className="text-gray-300 block mb-1">عنوان الكتاب *</label>
-                                        <input type="text" value={newBook.title} onChange={e => setNewBook({...newBook, title: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2.5 text-white" placeholder="عنوان الكتاب" required />
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                            <label className="text-gray-300 block mb-1">اسم الكاتب *</label>
-                                            <input type="text" value={newBook.author} onChange={e => setNewBook({...newBook, author: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2.5 text-white" placeholder="اسم الكاتب" required />
-                                        </div>
-                                        <div>
-                                            <label className="text-gray-300 block mb-1">السعر ($) *</label>
-                                            <input type="number" step="0.01" value={newBook.price} onChange={e => setNewBook({...newBook, price: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2.5 text-white" placeholder="0 للمجاني" required />
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-gray-300 block mb-1">القسم</label>
-                                        <select value={newBook.category} onChange={e => setNewBook({...newBook, category: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2.5 text-white">
-                                            {CATEGORIES.slice(1).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                                        </select>
-                                    </div>
-
-                                    {/* اختيار صورة الغلاف مع التصغير التلقائي */}
-                                    <div className="p-3 bg-luxuryBg rounded-xl border border-luxuryBorder space-y-2">
-                                        <label className="text-gold font-bold block">صورة غلاف الكتاب (تصغير وتجهيز تلقائي)</label>
-                                        <input 
-                                            type="file" 
-                                            accept="image/*" 
-                                            onChange={handleImageUpload}
-                                            className="w-full text-xs text-gray-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-gold file:text-black"
-                                        />
-                                        {coverPreview && (
-                                            <div className="mt-2 flex items-center gap-3">
-                                                <img src={coverPreview} alt="معاينة" className="w-14 h-20 object-cover rounded border border-gold/40" />
-                                                <span className="text-[10px] text-emerald-400">تم تجهيز وضغط الصورة بنجاح ✓</span>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* رابط ملف PDF المباشر لاستيعاب أي حجم */}
-                                    <div className="p-3 bg-luxuryBg rounded-xl border border-luxuryBorder space-y-1.5">
-                                        <label className="text-gold font-bold block">رابط ملف الكتاب PDF (Google Drive أو مباشر)</label>
-                                        <input 
-                                            type="url" 
-                                            placeholder="https://drive.google.com/... أو رابط مباشر" 
-                                            value={newBook.pdf_url} 
-                                            onChange={e => setNewBook({...newBook, pdf_url: e.target.value})} 
-                                            className="w-full bg-luxuryCard border border-luxuryBorder rounded-lg p-2.5 text-white text-[11px]"
-                                        />
-                                        <p className="text-[10px] text-gray-500">يتيح وضع الرابط المباشر فتح ملفات بأي حجم كان دون التقيد بحجم قاعدة البيانات.</p>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-gray-300 block mb-1">نبذة عن الكتاب</label>
-                                        <textarea rows="2" value={newBook.description} onChange={e => setNewBook({...newBook, description: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white" placeholder="نبذة عن الكتاب..."></textarea>
-                                    </div>
-
-                                    <button 
-                                        type="submit" 
-                                        disabled={isSubmitting}
-                                        className="w-full py-3 bg-gradient-to-l from-gold-dark to-gold text-black font-bold rounded-lg text-xs disabled:opacity-50"
-                                    >
-                                        {isSubmitting ? "جاري الحفظ..." : "حفظ الكتاب في المكتبة"}
-                                    </button>
-                                </form>
-
-                                <div className="space-y-2">
-                                    <h4 className="text-xs font-bold text-gray-300">الكتب المحفوظة ({books.length})</h4>
-                                    {books.map(b => (
-                                        <div key={b.id} className="bg-luxuryCard p-2.5 rounded-lg border border-luxuryBorder flex justify-between items-center text-xs">
-                                            <div className="flex items-center gap-2 truncate max-w-[200px]">
-                                                <img src={b.cover_image} alt="" className="w-8 h-10 object-cover rounded" />
-                                                <div className="truncate">
-                                                    <p className="font-bold text-white truncate">{b.title}</p>
-                                                    <p className="text-[10px] text-gray-400">{b.author} | {b.price} $</p>
-                                                </div>
-                                            </div>
-                                            <button onClick={() => handleDeleteBook(b.id)} className="text-red-400 px-2 py-1 rounded hover:bg-red-950/40">حذف</button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* 5. المكتبة الشاملة */}
-                        {currentScreen === 'library' && (
-                            <div className="space-y-4">
-                                <input 
-                                    type="text" 
-                                    placeholder="ابحث عن كتاب أو كاتب..." 
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                    className="w-full bg-luxuryCard border border-luxuryBorder rounded-xl p-3 text-xs text-white focus:outline-none"
-                                />
-                                <div className="grid grid-cols-2 gap-3">
-                                    {books.filter(b => (selectedCategory === 'الكل' || b.category === selectedCategory) && (b.title.includes(searchQuery) || b.author.includes(searchQuery))).map(b => (
-                                        <div key={b.id} onClick={() => { setSelectedBook(b); setCurrentScreen('details'); }} className="bg-luxuryCard border border-luxuryBorder rounded-xl p-2 cursor-pointer">
-                                            <img src={b.cover_image} className="aspect-[3/4] w-full object-cover rounded-lg mb-2" />
-                                            <h4 className="text-xs font-bold truncate">{b.title}</h4>
-                                            <span className="text-[10px] text-gold">{b.price === 0 ? "مجاني" : `${b.price} $`}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                    </main>
-
-                    {/* نافذة الدفع عبر بايننس */}
-                    {showPaymentModal && selectedBook && (
-                        <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                            <div className="bg-luxuryCard border border-luxuryBorder p-5 rounded-2xl w-full max-w-sm space-y-4 text-xs">
-                                <div className="flex justify-between items-center border-b border-luxuryBorder pb-2">
-                                    <h3 className="text-sm font-bold text-yellow-500">🟡 الدفع عبر محفظة بايننس</h3>
-                                    <button onClick={() => setShowPaymentModal(false)} className="text-gray-400 text-sm">✕</button>
-                                </div>
-
-                                <div className="space-y-3">
-                                    <p className="text-gray-300">
-                                        لشراء وقراءة كتاب <span className="text-white font-bold">"{selectedBook.title}"</span>:
-                                    </p>
-                                    
-                                    <div className="bg-luxuryBg p-3 rounded-xl border border-luxuryBorder space-y-1.5">
-                                        <div className="flex justify-between text-gray-400">
-                                            <span>المبلغ المطلوب:</span>
-                                            <span className="text-yellow-400 font-bold">{selectedBook.price} USDT</span>
-                                        </div>
-                                        <div className="flex justify-between text-gray-400">
-                                            <span>الشبكة المعتمدة:</span>
-                                            <span className="text-white font-bold">BNB Smart Chain (BEP20) / TRC20</span>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-gray-400 block mb-1">عنوان المحفظة (اضغط للنسخ):</label>
-                                        <div 
-                                            onClick={handleCopyAddress}
-                                            className="bg-black/60 p-2.5 rounded-lg border border-yellow-500/30 text-[10px] font-mono break-all text-yellow-300 cursor-pointer flex justify-between items-center"
-                                        >
-                                            <span>{BINANCE_USDT_ADDRESS}</span>
-                                            <span className="text-[9px] bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded ml-1">نسخ</span>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-gray-400 block mb-1">رقم أو رمز العملية (TXID / Order ID):</label>
-                                        <input 
-                                            type="text" 
-                                            placeholder="الصق رقم العملية هنا بعد التحويل" 
-                                            value={txidInput} 
-                                            onChange={e => setTxidInput(e.target.value)} 
-                                            className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white text-[11px]"
-                                        />
-                                    </div>
-
-                                    <button 
-                                        onClick={handleConfirmPayment}
-                                        className="w-full py-2.5 bg-gradient-to-l from-yellow-600 to-yellow-500 text-black font-bold rounded-lg text-xs"
-                                    >
-                                        تأكيد إرسال التحويل
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* القائمة السفلية */}
-                    <nav className="fixed bottom-0 left-0 right-0 bg-[#0D0D0D]/95 border-t border-luxuryBorder py-2.5 px-6 flex justify-around items-center max-w-md mx-auto z-40 text-xs">
-                        <button onClick={() => setCurrentScreen('home')} className={`font-bold ${currentScreen === 'home' ? 'text-gold' : 'text-gray-500'}`}>الرئيسية</button>
-                        <button onClick={() => setCurrentScreen('library')} className={`font-bold ${currentScreen === 'library' ? 'text-gold' : 'text-gray-500'}`}>المكتبة</button>
-                        <button onClick={() => setCurrentScreen('admin')} className={`font-bold ${currentScreen === 'admin' ? 'text-gold' : 'text-gray-500'}`}>الإدارة</button>
-                    </nav>
-                </div>
-            );
-        }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<WonderReadApp />);
-    </script>
-</body>
-</html>
+                    setNewBook({ title: '', author: '', category: 'إدارة وأعمال', price: '', pages: 120, cover_image: '', pdf_

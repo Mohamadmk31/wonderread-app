@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WonderRead | المكتبة الرقمية</title>
+    <title>WonderRead | المكتبة الرقمية المحمية</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -49,7 +49,7 @@
     <div id="root">
         <div style="display:flex; justify-content:center; align-items:center; height:100vh; flex-direction:column; gap:12px;">
             <div style="width:36px; height:36px; border:3px solid #D4AF37; border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite;"></div>
-            <p style="color:#D4AF37; font-size:13px; font-family:'Cairo',sans-serif;">جاري تشغيل مكتبة WonderRead...</p>
+            <p style="color:#D4AF37; font-size:13px; font-family:'Cairo',sans-serif;">جاري تشغيل منصة WonderRead الآمنة...</p>
         </div>
         <style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>
     </div>
@@ -57,8 +57,26 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // عنوان محفظة بايننس الخاص بك
-        const BINANCE_USDT_ADDRESS = "0x71c2b5e1974780447385012586f189f7831fbe61";
+        // دالة تنظيف المدخلات وتطهيرها ضد ثغرات XSS
+        const sanitizeInput = (str) => {
+            if (typeof str !== 'string') return '';
+            return str
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        };
+
+        // التحقق من سلامة الروابط
+        const isValidUrl = (string) => {
+            try {
+                const url = new URL(string);
+                return url.protocol === "http:" || url.protocol === "https:";
+            } catch (_) {
+                return false;
+            }
+        };
 
         let db = null;
         try {
@@ -78,6 +96,8 @@
             console.warn("تنبيه الاتصال السحابي:", e);
         }
 
+        const DEFAULT_WALLET = "0x71c2b5e1974780447385012586f189f7831fbe61";
+
         const INITIAL_BOOKS = [
             {
                 id: "b1",
@@ -95,7 +115,7 @@
 
         const CATEGORIES = ["الكل", "إدارة وأعمال", "تاريخ", "تكنولوجيا", "تطوير ذات", "روايات"];
 
-        // ضغط وتصغير صورة الغلاف
+        // ضغط وتصغير صورة الغلاف برمجياً
         const compressImage = (file, maxWidth = 420, quality = 0.7) => {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -136,6 +156,7 @@
                     return INITIAL_BOOKS;
                 }
             });
+
             const [proposals, setProposals] = useState(() => {
                 try {
                     const saved = localStorage.getItem('wonderread_proposals');
@@ -145,6 +166,12 @@
                 }
             });
 
+            // عنوان المحفظة القابل للتعديل
+            const [walletAddress, setWalletAddress] = useState(() => {
+                return localStorage.getItem('wonderread_wallet') || DEFAULT_WALLET;
+            });
+            const [walletInput, setWalletInput] = useState(walletAddress);
+
             const [isCloudActive, setIsCloudActive] = useState(false);
             const [selectedBook, setSelectedBook] = useState(null);
             const [searchQuery, setSearchQuery] = useState('');
@@ -152,25 +179,43 @@
             const [readerBook, setReaderBook] = useState(null);
             const [isNightMode, setIsNightMode] = useState(true);
 
-            // حالة الدفع الخفيفة المضمنة
+            // حالات الدفع المباشر
             const [txidInput, setTxidInput] = useState('');
             const [isUnlocked, setIsUnlocked] = useState(false);
 
-            // نموذج إضافة كتاب (حصري للأدمن)
+            // نموذج نشر كتاب (للمشرف فقط)
             const [adminBook, setAdminBook] = useState({
                 title: '', author: '', category: 'إدارة وأعمال', price: '', pages: 120, cover_image: '', pdf_url: '', description: ''
             });
             const [adminCoverPreview, setAdminCoverPreview] = useState(null);
             const [isSubmitting, setIsSubmitting] = useState(false);
 
-            // نموذج تقديم مسودة عمل (للقراء والكتّاب الزوار)
+            // نموذج تقديم مسودة (للزوار)
             const [userProposal, setUserProposal] = useState({
                 title: '', author: '', contact: '', pdf_url: '', note: ''
             });
 
+            // حماية ضد النسخ والنقر الأيمن
+            useEffect(() => {
+                const handleContextMenu = (e) => e.preventDefault();
+                document.addEventListener('contextmenu', handleContextMenu);
+                return () => document.removeEventListener('contextmenu', handleContextMenu);
+            }, []);
+
+            // المزامنة السحابية الحية
             useEffect(() => {
                 if (db) {
                     try {
+                        // جلب عنوان المحفظة
+                        db.collection("settings").doc("finance").get().then(doc => {
+                            if (doc.exists && doc.data().walletAddress) {
+                                setWalletAddress(doc.data().walletAddress);
+                                setWalletInput(doc.data().walletAddress);
+                                localStorage.setItem('wonderread_wallet', doc.data().walletAddress);
+                            }
+                        }).catch(() => {});
+
+                        // جلب الكتب
                         const unsubBooks = db.collection("books").onSnapshot(snapshot => {
                             if (!snapshot.empty) {
                                 const cloudData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -183,6 +228,7 @@
                             }
                         }, () => setIsCloudActive(false));
 
+                        // جلب المسودات للأدمن
                         let unsubProposals = () => {};
                         if (isAdminMode) {
                             unsubProposals = db.collection("proposals").onSnapshot(snapshot => {
@@ -198,6 +244,29 @@
                     }
                 }
             }, [isAdminMode]);
+
+            // تحديث عنوان المحفظة من الإدارة
+            const handleUpdateWallet = async (e) => {
+                e.preventDefault();
+                const cleaned = sanitizeInput(walletInput.trim());
+                if (!cleaned) {
+                    alert("يرجى إدخال عنوان محفظة صحيح.");
+                    return;
+                }
+                setWalletAddress(cleaned);
+                localStorage.setItem('wonderread_wallet', cleaned);
+
+                if (isCloudActive && db) {
+                    try {
+                        await db.collection("settings").doc("finance").set({ walletAddress: cleaned }, { merge: true });
+                        alert("تم تحديث عنوان المحفظة سحابياً بنجاح!");
+                    } catch (err) {
+                        alert("تم الحفظ محلياً (حدث خطأ بالسحابة: " + err.message + ")");
+                    }
+                } else {
+                    alert("تم حفظ عنوان المحفظة محلياً بنجاح!");
+                }
+            };
 
             // رفع وضغط الغلاف
             const handleImageUpload = async (e) => {
@@ -216,22 +285,32 @@
             // نشر كتاب جديد من الإدارة
             const handleAdminPublishBook = async (e) => {
                 e.preventDefault();
-                if (!adminBook.title || !adminBook.author || adminBook.price === '') {
+                const cleanTitle = sanitizeInput(adminBook.title.trim());
+                const cleanAuthor = sanitizeInput(adminBook.author.trim());
+                const cleanDesc = sanitizeInput(adminBook.description.trim());
+                const cleanPdf = adminBook.pdf_url.trim();
+
+                if (!cleanTitle || !cleanAuthor || adminBook.price === '') {
                     alert("يرجى ملء الحقول المطلوبة (*)");
+                    return;
+                }
+
+                if (cleanPdf && !isValidUrl(cleanPdf)) {
+                    alert("يرجى التأكد من كتابة رابط PDF صالح يبدأ بـ https://");
                     return;
                 }
 
                 setIsSubmitting(true);
                 const defaultCover = "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?auto=format&fit=crop&q=80&w=400";
                 const item = {
-                    title: adminBook.title,
-                    author: adminBook.author,
+                    title: cleanTitle,
+                    author: cleanAuthor,
                     category: adminBook.category,
                     price: parseFloat(adminBook.price) || 0,
                     pages: parseInt(adminBook.pages) || 120,
-                    description: adminBook.description || 'لا يوجد وصف متاح.',
+                    description: cleanDesc || 'لا يوجد وصف متاح.',
                     cover_image: adminBook.cover_image || defaultCover,
-                    pdf_url: adminBook.pdf_url || '',
+                    pdf_url: cleanPdf || '',
                     rating: 5.0,
                     createdAt: new Date().toISOString()
                 };
@@ -258,18 +337,29 @@
             // تقديم مسودة من كاتب زائر
             const handleUserSubmitProposal = async (e) => {
                 e.preventDefault();
-                if (!userProposal.title || !userProposal.author || !userProposal.pdf_url) {
-                    alert("يرجى كتابة عنوان العمل واسم المؤلف ورابط الـ PDF.");
+                const cleanTitle = sanitizeInput(userProposal.title.trim());
+                const cleanAuthor = sanitizeInput(userProposal.author.trim());
+                const cleanContact = sanitizeInput(userProposal.contact.trim());
+                const cleanNote = sanitizeInput(userProposal.note.trim());
+                const cleanPdf = userProposal.pdf_url.trim();
+
+                if (!cleanTitle || !cleanAuthor || !cleanPdf) {
+                    alert("يرجى ملء الحقول المطلوبة.");
+                    return;
+                }
+
+                if (!isValidUrl(cleanPdf)) {
+                    alert("يرجى وضع رابط PDF صالح ومباشر يبدأ بـ https://");
                     return;
                 }
 
                 setIsSubmitting(true);
                 const proposalItem = {
-                    title: userProposal.title,
-                    author: userProposal.author,
-                    contact: userProposal.contact || 'غير محدد',
-                    pdf_url: userProposal.pdf_url,
-                    note: userProposal.note || '',
+                    title: cleanTitle,
+                    author: cleanAuthor,
+                    contact: cleanContact || 'غير محدد',
+                    pdf_url: cleanPdf,
+                    note: cleanNote || '',
                     submittedAt: new Date().toLocaleString('ar-EG')
                 };
 
@@ -292,7 +382,7 @@
             };
 
             const handleDeleteProposal = async (id) => {
-                if (confirm("هل تريد حذف هذا المقترح؟")) {
+                if (confirm("هل تريد حذف هذا المقترح نهائياً؟")) {
                     if (isCloudActive && db) {
                         try { await db.collection("proposals").doc(id).delete(); } catch(e){}
                     }
@@ -313,33 +403,32 @@
                 }
             };
 
-            // نسخ العنوان
             const handleCopyAddress = () => {
-                navigator.clipboard.writeText(BINANCE_USDT_ADDRESS);
+                navigator.clipboard.writeText(walletAddress);
                 alert("تم نسخ عنوان محفظة بايننس بنجاح!");
             };
 
-            // تأكيد عملية الدفع الخفيفة
             const handleQuickPay = async () => {
-                if (!txidInput.trim()) {
-                    alert("يرجى كتابة رقم أو معرف التحويل (TXID) للتأكيد.");
+                const cleanTxid = sanitizeInput(txidInput.trim());
+                if (!cleanTxid || cleanTxid.length < 8) {
+                    alert("يرجى كتابة رقم أو رمز عملية صحيح (TXID) للتأكيد.");
                     return;
                 }
 
-                // تسجيل إشعار الدفعة في السحابة إن كانت مفعلة
                 if (isCloudActive && db) {
                     try {
                         await db.collection("payments").add({
                             bookTitle: selectedBook.title,
                             amount: selectedBook.price,
-                            txid: txidInput.trim(),
+                            txid: cleanTxid,
+                            walletReceived: walletAddress,
                             date: new Date().toLocaleString('ar-EG')
                         });
                     } catch (e) {}
                 }
 
                 setIsUnlocked(true);
-                alert("تم تأكيد العملية بنجاح! تم فتح قراءة الكتاب.");
+                alert("تم استلام العملية وتأكيدها! تم فتح قراءة الكتاب.");
             };
 
             return (
@@ -353,7 +442,7 @@
                             <div>
                                 <h1 className="text-lg font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-l from-gold to-white">WonderRead</h1>
                                 <p className="text-[9px] text-gold/80 -mt-1 font-light">
-                                    {isCloudActive ? "سحابي متصل ✓" : "المكتبة الرقمية الفاخرة"}
+                                    {isCloudActive ? "سحابي متصل ومحمي ✓" : "المكتبة الرقمية الآمنة"}
                                 </p>
                             </div>
                         </div>
@@ -389,10 +478,10 @@
                             <div className="space-y-6">
                                 <div className="rounded-2xl border border-gold/20 p-5 bg-gradient-to-br from-luxuryCard to-black shadow-xl">
                                     <span className="text-[10px] font-bold text-gold bg-gold/10 px-2.5 py-1 rounded-full border border-gold/20">
-                                        المكتبة الفاخرة
+                                        المكتبة الفاخرة المعتمدة
                                     </span>
                                     <h2 className="text-xl font-extrabold mt-3 text-white leading-tight">عالم من المعرفة الفاخرة بين يديك</h2>
-                                    <p className="text-xs text-gray-400 mt-2 font-light">تصفح الكتب واقرأ العينات واستمتع بالقراءة الفاخرة.</p>
+                                    <p className="text-xs text-gray-400 mt-2 font-light">تصفح الكتب واقرأ العينات واستمتع بتجربة قراءة آمنة بالكامل.</p>
                                     <div className="flex gap-2 mt-4">
                                         <button 
                                             onClick={() => setCurrentScreen('library')}
@@ -459,7 +548,7 @@
                                     <button onClick={() => setCurrentScreen('home')} className="text-xs text-gray-400">إلغاء</button>
                                 </div>
                                 <div className="bg-luxuryCard p-3 rounded-xl border border-luxuryBorder text-xs text-gray-300 leading-relaxed">
-                                    أهلاً بك! يمكنك إرسال مسودة كتابك أو ملفك إلى الإدارة لمراجعته؛ لن يُنشر أي عمل في المكتبة إلا بعد اعتماده رسمياً من المشرف.
+                                    أهلاً بك! يمكنك إرسال مسودة كتابك أو ملفك إلى الإدارة لمراجعته؛ لن يُنشر أي عمل في المكتبة إلا بعد اعتماده وتدقيقه رسمياً من قِبل المشرف.
                                 </div>
 
                                 <form onSubmit={handleUserSubmitProposal} className="bg-luxuryCard p-4 rounded-xl border border-luxuryBorder space-y-3 text-xs">
@@ -490,7 +579,7 @@
                             </div>
                         )}
 
-                        {/* 3. تفاصيل الكتاب مع بطاقة الدفع الخفيفة المدمجة */}
+                        {/* 3. تفاصيل الكتاب مع بطاقة الدفع المباشرة */}
                         {currentScreen === 'details' && selectedBook && (
                             <div className="space-y-5">
                                 <button onClick={() => setCurrentScreen('home')} className="text-xs text-gold flex items-center gap-1">
@@ -512,7 +601,7 @@
                                     {selectedBook.description}
                                 </div>
 
-                                {/* وسيلة الدفع الخفيفة والمباشرة */}
+                                {/* وسيلة الدفع الخفيفة */}
                                 {selectedBook.price > 0 && !isUnlocked ? (
                                     <div className="bg-gradient-to-br from-luxuryCard to-black border border-yellow-500/30 rounded-xl p-3.5 space-y-3 text-xs">
                                         <div className="flex justify-between items-center border-b border-luxuryBorder pb-2">
@@ -530,7 +619,7 @@
                                                 onClick={handleCopyAddress}
                                                 className="bg-black/60 p-2.5 rounded-lg border border-yellow-500/20 text-[10px] font-mono break-all text-yellow-300 cursor-pointer flex justify-between items-center"
                                             >
-                                                <span>{BINANCE_USDT_ADDRESS}</span>
+                                                <span>{walletAddress}</span>
                                                 <span className="text-[9px] bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded ml-1">نسخ</span>
                                             </div>
                                         </div>
@@ -564,9 +653,17 @@
                             </div>
                         )}
 
-                        {/* 4. قارئ الكتاب */}
+                        {/* 4. قارئ الكتاب المحمي مع علامة مائية */}
                         {currentScreen === 'reader' && readerBook && (
                             <div className={`p-4 rounded-2xl min-h-[550px] flex flex-col justify-between border border-luxuryBorder relative overflow-hidden ${isNightMode ? 'bg-[#121212] text-gray-100' : 'bg-white text-gray-900'}`}>
+                                
+                                {/* علامة مائية خلفية ضد النسخ والسرقة */}
+                                <div className="absolute inset-0 pointer-events-none z-10 flex flex-wrap items-center justify-center opacity-[0.03] select-none">
+                                    {Array(15).fill("WonderRead | محمي بحقوق الملكية").map((txt, i) => (
+                                        <span key={i} className="text-xs font-bold text-red-500 rotate-12 m-8 whitespace-nowrap">{txt}</span>
+                                    ))}
+                                </div>
+
                                 <div className="flex justify-between items-center border-b border-luxuryBorder/40 pb-2 z-20">
                                     <button onClick={() => setCurrentScreen('details')} className="text-xs text-gold font-bold">← إغلاق</button>
                                     <span className="text-xs font-bold truncate max-w-[150px]">{readerBook.title}</span>
@@ -580,7 +677,7 @@
                                         <iframe 
                                             src={readerBook.pdf_url} 
                                             className="w-full h-[450px] rounded-lg border border-luxuryBorder"
-                                            title="PDF"
+                                            title="PDF Viewer"
                                         />
                                     ) : (
                                         <div className="text-center space-y-4 px-4">
@@ -592,7 +689,7 @@
                             </div>
                         )}
 
-                        {/* 5. لوحة الإدارة الحصرية للمشرف */}
+                        {/* 5. لوحة الإدارة الحصرية (التحكم بالكتب والمحفظة والمسودات) */}
                         {isAdminMode && currentScreen === 'admin' && (
                             <div className="space-y-6">
                                 <div className="flex justify-between items-center">
@@ -600,7 +697,29 @@
                                     <button onClick={() => setCurrentScreen('home')} className="text-xs text-gray-400">العودة للرئيسية</button>
                                 </div>
 
-                                {/* صندوق المسودات */}
+                                {/* إعدادات وتحديث عنوان محفظة بايننس المباشر */}
+                                <form onSubmit={handleUpdateWallet} className="bg-luxuryCard p-4 rounded-xl border border-yellow-500/30 space-y-3 text-xs">
+                                    <h3 className="font-bold text-yellow-400 border-b border-luxuryBorder pb-2 flex items-center justify-between">
+                                        <span>⚙️ محفظة بايننس لاستلام الأرباح</span>
+                                        <span className="text-[10px] text-gray-400 font-normal">تحديث مباشر للمشترين</span>
+                                    </h3>
+                                    <div>
+                                        <label className="text-gray-300 block mb-1">عنوان محفظتك (USDT / BEP20 أو TRC20):</label>
+                                        <input 
+                                            type="text" 
+                                            value={walletInput} 
+                                            onChange={e => setWalletInput(e.target.value)} 
+                                            className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-yellow-300 font-mono text-[11px]" 
+                                            placeholder="الصق عنوان المحفظة هنا..."
+                                            required 
+                                        />
+                                    </div>
+                                    <button type="submit" className="w-full py-2 bg-gradient-to-l from-yellow-600 to-yellow-500 text-black font-bold rounded-lg shadow">
+                                        حفظ وتحديث عنوان المحفظة فوراً
+                                    </button>
+                                </form>
+
+                                {/* صندوق المسودات الواردة */}
                                 <div className="border border-gold/30 rounded-xl p-3 bg-luxuryCard space-y-3">
                                     <h3 className="text-xs font-bold text-gold flex items-center justify-between">
                                         <span>📥 صندوق المسودات والمقترحات الواردة ({proposals.length})</span>
@@ -631,7 +750,7 @@
                                     )}
                                 </div>
 
-                                {/* نموذج نشر كتاب جديد */}
+                                {/* نموذج نشر كتاب جديد (حصري لك) */}
                                 <form onSubmit={handleAdminPublishBook} className="bg-luxuryCard p-4 rounded-xl border border-luxuryBorder space-y-3 text-xs">
                                     <h3 className="font-bold text-white border-b border-luxuryBorder pb-2">نشر كتاب في المكتبة (حصري لك)</h3>
                                     <div>
@@ -667,7 +786,7 @@
                                         <label className="text-gray-300 block mb-1">نبذة عن الكتاب</label>
                                         <textarea rows="2" value={adminBook.description} onChange={e => setAdminBook({...adminBook, description: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white"></textarea>
                                     </div>
-                                    <button type="submit" disabled={isSubmitting} className="w-full py-2.5 bg-gradient-to-l from-gold-dark to-gold text-black font-bold rounded-lg text-xs">
+                                    <button type="submit" disabled={isSubmitting} className="w-full py-2.5 bg-gradient-to-l from-gold-dark to-gold text-black font-bold rounded-lg text-xs shadow-lg">
                                         نشر الكتاب في المكتبة العامة فوراً
                                     </button>
                                 </form>

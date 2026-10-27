@@ -158,21 +158,22 @@
         let db = null;
         let isCloudActive = false;
 
-        // تهيئة Firebase بأمان
-        try {
-            const firebaseConfig = {
-                apiKey: "AIzaSyB5y-QiubQ6X-Cu0orHAT58S1uGpglnxbc",
-                authDomain: "wonderread-app-e760b.firebaseapp.com",
-                projectId: "wonderread-app-e760b",
-                storageBucket: "wonderread-app-e760b.firebasestorage.app"
-            };
-            if (window.firebase) {
-                if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-                db = firebase.firestore();
-                syncWithCloud();
+        function initFirebase() {
+            try {
+                const firebaseConfig = {
+                    apiKey: "AIzaSyB5y-QiubQ6X-Cu0orHAT58S1uGpglnxbc",
+                    authDomain: "wonderread-app-e760b.firebaseapp.com",
+                    projectId: "wonderread-app-e760b",
+                    storageBucket: "wonderread-app-e760b.firebasestorage.app"
+                };
+                if (window.firebase) {
+                    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+                    db = firebase.firestore();
+                    syncWithCloud();
+                }
+            } catch (e) {
+                console.warn("السحابة تعمل محلياً:", e);
             }
-        } catch (e) {
-            console.warn("السحابة تعمل محلياً:", e);
         }
 
         function syncWithCloud() {
@@ -182,13 +183,15 @@
                     books = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     localStorage.setItem('wonderread_books', JSON.stringify(books));
                     isCloudActive = true;
-                    document.getElementById('cloud-status').innerText = "سحابي متصل ✓";
+                    const statusEl = document.getElementById('cloud-status');
+                    if (statusEl) statusEl.innerText = "سحابي متصل ✓";
                     render();
                 } else {
                     INITIAL_BOOKS.forEach(b => db.collection("books").add(b));
                 }
             }, () => {
-                document.getElementById('cloud-status').innerText = "المكتبة الرقمية (محلي)";
+                const statusEl = document.getElementById('cloud-status');
+                if (statusEl) statusEl.innerText = "المكتبة الرقمية (محلي)";
             });
 
             db.collection("comments").onSnapshot(snap => {
@@ -204,7 +207,6 @@
             });
         }
 
-        // ضغط الصورة
         function compressImage(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -247,7 +249,6 @@
             currentScreen = screen;
             if (bookId) selectedBook = books.find(b => b.id === bookId);
             
-            // تحديث ألوان القائمة
             ['home', 'library', 'admin'].forEach(s => {
                 const el = document.getElementById('nav-' + s);
                 if (el) el.className = (s === screen) ? "font-bold text-gold" : "font-bold text-gray-500";
@@ -267,4 +268,21 @@
                             <span class="text-[10px] font-bold text-gold bg-gold/10 px-2.5 py-1 rounded-full border border-gold/20">منصة القراءة الحرة</span>
                             <h2 class="text-xl font-extrabold mt-3 text-white leading-tight">عالم من المعرفة الفاخرة بين يديك</h2>
                             <p class="text-xs text-gray-400 mt-2 font-light">تصفح الكتب واقرأ التعليقات وتفاعل مع نخبة القراء بأمان تام.</p>
-                            <button onclick="showScreen('library')" class="mt-
+                            <button onclick="showScreen('library')" class="mt-4 px-4 py-2 bg-gradient-to-l from-gold-dark to-gold text-black rounded-lg text-xs font-bold shadow-lg">استكشف المكتبة الآن</button>
+                        </div>
+
+                        <div>
+                            <h3 class="text-sm font-bold border-r-2 border-gold pr-2 mb-3">التصنيفات</h3>
+                            <div class="flex space-x-2 space-x-reverse overflow-x-auto pb-1">
+                                ${CATEGORIES.map(cat => `
+                                    <button onclick="selectedCategory='${cat}'; showScreen('library');" class="px-3.5 py-1 rounded-full text-xs bg-luxuryCard border border-luxuryBorder text-gray-300 whitespace-nowrap active:border-gold">${cat}</button>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 class="text-sm font-bold border-r-2 border-gold pr-2 mb-3">أحدث الكتب المتاحة (${books.length})</h3>
+                            <div class="grid grid-cols-2 gap-3">
+                                ${books.map(b => `
+                                    <div onclick="showScreen('details', '${b.id}')" class="bg-luxuryCard border border-luxuryBorder rounded-xl overflow-hidden cursor-pointer hover:border-gold/40 transition-all">
+                                        <div class="

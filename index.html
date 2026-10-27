@@ -122,7 +122,6 @@
         };
 
         function WonderReadApp() {
-            // التحقق هل الرابط يحتوي على وضع الإدارة أم لا
             const urlParams = new URLSearchParams(window.location.search);
             const isAdminMode = urlParams.get('admin') === 'true' || urlParams.get('admin') === '1';
 
@@ -135,6 +134,15 @@
                     return INITIAL_BOOKS;
                 }
             });
+            const [proposals, setProposals] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('wonderread_proposals');
+                    return saved ? JSON.parse(saved) : [];
+                } catch (e) {
+                    return [];
+                }
+            });
+
             const [isCloudActive, setIsCloudActive] = useState(false);
             const [selectedBook, setSelectedBook] = useState(null);
             const [searchQuery, setSearchQuery] = useState('');
@@ -146,17 +154,22 @@
             const [showPaymentModal, setShowPaymentModal] = useState(false);
             const [txidInput, setTxidInput] = useState('');
 
-            // إضافة كتاب
-            const [newBook, setNewBook] = useState({
-                title: '', author: '', category: 'إدارة وأعمال', price: '', pages: 150, cover_image: '', pdf_url: '', description: ''
+            // نموذج إضافة كتاب (للأدمن فقط)
+            const [adminBook, setAdminBook] = useState({
+                title: '', author: '', category: 'إدارة وأعمال', price: '', pages: 120, cover_image: '', pdf_url: '', description: ''
             });
-            const [coverPreview, setCoverPreview] = useState(null);
+            const [adminCoverPreview, setAdminCoverPreview] = useState(null);
             const [isSubmitting, setIsSubmitting] = useState(false);
+
+            // نموذج تقديم مسودة كتاب (للمستخدمين والكتّاب فقط)
+            const [userProposal, setUserProposal] = useState({
+                title: '', author: '', contact: '', pdf_url: '', note: ''
+            });
 
             useEffect(() => {
                 if (db) {
                     try {
-                        const unsub = db.collection("books").onSnapshot(snapshot => {
+                        const unsubBooks = db.collection("books").onSnapshot(snapshot => {
                             if (!snapshot.empty) {
                                 const cloudData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                                 setBooks(cloudData);
@@ -167,29 +180,41 @@
                                 setIsCloudActive(true);
                             }
                         }, () => setIsCloudActive(false));
-                        return () => unsub();
+
+                        let unsubProposals = () => {};
+                        if (isAdminMode) {
+                            unsubProposals = db.collection("proposals").onSnapshot(snapshot => {
+                                const pData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                setProposals(pData);
+                                localStorage.setItem('wonderread_proposals', JSON.stringify(pData));
+                            }, () => {});
+                        }
+
+                        return () => { unsubBooks(); unsubProposals(); };
                     } catch (err) {
                         setIsCloudActive(false);
                     }
                 }
-            }, []);
+            }, [isAdminMode]);
 
+            // رفع وضغط صورة الغلاف في لوحة المشرف
             const handleImageUpload = async (e) => {
                 const file = e.target.files[0];
                 if (file) {
                     try {
                         const compressedBase64 = await compressImage(file);
-                        setCoverPreview(compressedBase64);
-                        setNewBook(prev => ({ ...prev, cover_image: compressedBase64 }));
+                        setAdminCoverPreview(compressedBase64);
+                        setAdminBook(prev => ({ ...prev, cover_image: compressedBase64 }));
                     } catch (err) {
                         alert("حدث خطأ في معالجة الصورة.");
                     }
                 }
             };
 
-            const handleAddBook = async (e) => {
+            // نشر كتاب جديد (خاص بالمشرف فقط)
+            const handleAdminPublishBook = async (e) => {
                 e.preventDefault();
-                if (!newBook.title || !newBook.author || newBook.price === '') {
+                if (!adminBook.title || !adminBook.author || adminBook.price === '') {
                     alert("يرجى ملء الحقول المطلوبة (*)");
                     return;
                 }
@@ -197,14 +222,14 @@
                 setIsSubmitting(true);
                 const defaultCover = "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?auto=format&fit=crop&q=80&w=400";
                 const item = {
-                    title: newBook.title,
-                    author: newBook.author,
-                    category: newBook.category,
-                    price: parseFloat(newBook.price) || 0,
-                    pages: parseInt(newBook.pages) || 120,
-                    description: newBook.description || 'لا يوجد وصف متاح.',
-                    cover_image: newBook.cover_image || defaultCover,
-                    pdf_url: newBook.pdf_url || '',
+                    title: adminBook.title,
+                    author: adminBook.author,
+                    category: adminBook.category,
+                    price: parseFloat(adminBook.price) || 0,
+                    pages: parseInt(adminBook.pages) || 120,
+                    description: adminBook.description || 'لا يوجد وصف متاح.',
+                    cover_image: adminBook.cover_image || defaultCover,
+                    pdf_url: adminBook.pdf_url || '',
                     rating: 5.0,
                     createdAt: new Date().toISOString()
                 };
@@ -217,9 +242,10 @@
                         setBooks(local);
                         localStorage.setItem('wonderread_books', JSON.stringify(local));
                     }
-                    alert("تم حفظ الكتاب بنجاح!");
-                    setNewBook({ title: '', author: '', category: 'إدارة وأعمال', price: '', pages: 150, cover_image: '', pdf_url: '', description: '' });
-                    setCoverPreview(null);
+                    alert("تم نشر الكتاب رسمياً في المكتبة بنجاح!");
+                    setAdminBook({ title: '', author: '', category: 'إدارة وأعمال', price: '', pages: 120, cover_image: '', pdf_url: '', description: '' });
+                    setAdminCoverPreview(null);
+                    setCurrentScreen('home');
                 } catch (err) {
                     alert("حدث خطأ: " + err.message);
                 } finally {
@@ -227,6 +253,55 @@
                 }
             };
 
+            // إرسال مسودة من قارئ/كاتب (تذهب لصندوق وارد المشرف فقط)
+            const handleUserSubmitProposal = async (e) => {
+                e.preventDefault();
+                if (!userProposal.title || !userProposal.author || !userProposal.pdf_url) {
+                    alert("يرجى كتابة عنوان العمل واسم المؤلف ورابط الـ PDF.");
+                    return;
+                }
+
+                setIsSubmitting(true);
+                const proposalItem = {
+                    title: userProposal.title,
+                    author: userProposal.author,
+                    contact: userProposal.contact || 'غير محدد',
+                    pdf_url: userProposal.pdf_url,
+                    note: userProposal.note || '',
+                    submittedAt: new Date().toLocaleString('ar-EG')
+                };
+
+                try {
+                    if (isCloudActive && db) {
+                        await db.collection("proposals").add(proposalItem);
+                    } else {
+                        const localP = [proposalItem, ...proposals];
+                        setProposals(localP);
+                        localStorage.setItem('wonderread_proposals', JSON.stringify(localP));
+                    }
+                    alert("شكراً لك! تم استلام مقترحك بنجاح وسيتم الاطلاع عليه ومراجعته من قِبل إدارة WonderRead.");
+                    setUserProposal({ title: '', author: '', contact: '', pdf_url: '', note: '' });
+                    setCurrentScreen('home');
+                } catch (err) {
+                    alert("تعذر الإرسال: " + err.message);
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            // حذف مقترح مسودة
+            const handleDeleteProposal = async (id) => {
+                if (confirm("هل تريد حذف هذا المقترح؟")) {
+                    if (isCloudActive && db) {
+                        try { await db.collection("proposals").doc(id).delete(); } catch(e){}
+                    }
+                    const updated = proposals.filter(p => p.id !== id);
+                    setProposals(updated);
+                    localStorage.setItem('wonderread_proposals', JSON.stringify(updated));
+                }
+            };
+
+            // حذف كتاب منشور
             const handleDeleteBook = async (id) => {
                 if (confirm("هل تريد حذف هذا الكتاب نهائياً من المكتبة؟")) {
                     if (isCloudActive && db) {
@@ -269,18 +344,32 @@
                             </div>
                         </div>
 
-                        {/* يظهر زر الإدارة فقط إذا كنت أنت من يفتح الرابط الخاص */}
-                        {isAdminMode && (
+                        <div className="flex items-center space-x-2 space-x-reverse">
+                            {/* زر للمستخدمين لتقديم مقترح/مسودة */}
                             <button 
-                                onClick={() => setCurrentScreen('admin')}
-                                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${currentScreen === 'admin' ? 'bg-gold text-black' : 'bg-gold/10 text-gold border border-gold/30'}`}
+                                onClick={() => setCurrentScreen('submit-proposal')}
+                                className="px-2.5 py-1.5 rounded-full text-[11px] font-semibold bg-luxuryCard border border-gold/40 text-gold hover:bg-gold/10"
                             >
-                                لوحة الإدارة
+                                تقديم مسودة عمل +
                             </button>
-                        )}
+
+                            {/* زر الإدارة الحصري لك أنت */}
+                            {isAdminMode && (
+                                <button 
+                                    onClick={() => setCurrentScreen('admin')}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all relative ${currentScreen === 'admin' ? 'bg-gold text-black' : 'bg-gold/10 text-gold border border-gold/30'}`}
+                                >
+                                    لوحة الإدارة
+                                    {proposals.length > 0 && (
+                                        <span className="absolute -top-1 -right-1 bg-red-600 text-white w-4 h-4 rounded-full text-[9px] flex items-center justify-center font-bold">
+                                            {proposals.length}
+                                        </span>
+                                    )}
+                                </button>
+                            )}
+                        </div>
                     </header>
 
-                    {/* المحتوى */}
                     <main className="max-w-md mx-auto px-4 pt-4">
 
                         {/* 1. الرئيسية */}
@@ -292,12 +381,20 @@
                                     </span>
                                     <h2 className="text-xl font-extrabold mt-3 text-white leading-tight">عالم من المعرفة الفاخرة بين يديك</h2>
                                     <p className="text-xs text-gray-400 mt-2 font-light">تصفح الكتب واقرأ العينات واستمتع بالقراءة الفاخرة.</p>
-                                    <button 
-                                        onClick={() => setCurrentScreen('library')}
-                                        className="mt-4 px-4 py-2 bg-gradient-to-l from-gold-dark to-gold text-black rounded-lg text-xs font-bold shadow-lg"
-                                    >
-                                        استكشف المكتبة الآن
-                                    </button>
+                                    <div className="flex gap-2 mt-4">
+                                        <button 
+                                            onClick={() => setCurrentScreen('library')}
+                                            className="px-4 py-2 bg-gradient-to-l from-gold-dark to-gold text-black rounded-lg text-xs font-bold shadow-lg"
+                                        >
+                                            استكشف المكتبة
+                                        </button>
+                                        <button 
+                                            onClick={() => setCurrentScreen('submit-proposal')}
+                                            className="px-3 py-2 bg-luxuryCard border border-gold/30 text-gold rounded-lg text-xs font-semibold"
+                                        >
+                                            تقديم مسودة للنشر
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div>
@@ -316,7 +413,7 @@
                                 </div>
 
                                 <div>
-                                    <h3 className="text-sm font-bold border-r-2 border-gold pr-2 mb-3">أحدث الكتب ({books.length})</h3>
+                                    <h3 className="text-sm font-bold border-r-2 border-gold pr-2 mb-3">الكتب المعتمدة بالمكتبة ({books.length})</h3>
                                     <div className="grid grid-cols-2 gap-3">
                                         {books.map(b => (
                                             <div 
@@ -342,7 +439,46 @@
                             </div>
                         )}
 
-                        {/* 2. تفاصيل الكتاب */}
+                        {/* 2. تقديم مسودة عمل (للزوار - لا ينشر شيئاً بل يرسله للمشرف فقط) */}
+                        {currentScreen === 'submit-proposal' && (
+                            <div className="space-y-4">
+                                <div className="flex justify-between items-center">
+                                    <h2 className="text-sm font-bold text-gold">تقديم مسودة عمل للمراجعة</h2>
+                                    <button onClick={() => setCurrentScreen('home')} className="text-xs text-gray-400">إلغاء</button>
+                                </div>
+                                <div className="bg-luxuryCard p-3 rounded-xl border border-luxuryBorder text-xs text-gray-300 leading-relaxed">
+                                    أهلاً بك! يمكنك إرسال مسودة كتابك أو ملفك إلى الإدارة لمراجعته والتواصل معك؛ لن يُنشر أي عمل في المكتبة إلا بعد اعتماده رسمياً من الإدارة.
+                                </div>
+
+                                <form onSubmit={handleUserSubmitProposal} className="bg-luxuryCard p-4 rounded-xl border border-luxuryBorder space-y-3 text-xs">
+                                    <div>
+                                        <label className="text-gray-300 block mb-1">عنوان العمل أو المسودة *</label>
+                                        <input type="text" value={userProposal.title} onChange={e => setUserProposal({...userProposal, title: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white" placeholder="اسم المسودة" required />
+                                    </div>
+                                    <div>
+                                        <label className="text-gray-300 block mb-1">اسم المؤلف *</label>
+                                        <input type="text" value={userProposal.author} onChange={e => setUserProposal({...userProposal, author: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white" placeholder="اسمك الكريم" required />
+                                    </div>
+                                    <div>
+                                        <label className="text-gold font-bold block mb-1">رابط ملف PDF (Google Drive أو مباشر) *</label>
+                                        <input type="url" value={userProposal.pdf_url} onChange={e => setUserProposal({...userProposal, pdf_url: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white text-[11px]" placeholder="https://drive.google.com/..." required />
+                                    </div>
+                                    <div>
+                                        <label className="text-gray-300 block mb-1">وسيلة التواصل (واتساب أو بريد إلكتروني)</label>
+                                        <input type="text" value={userProposal.contact} onChange={e => setUserProposal({...userProposal, contact: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white" placeholder="رقم هاتفك أو بريدك" />
+                                    </div>
+                                    <div>
+                                        <label className="text-gray-300 block mb-1">ملاحظة أو نبذة للإدارة</label>
+                                        <textarea rows="2" value={userProposal.note} onChange={e => setUserProposal({...userProposal, note: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white" placeholder="نبذة مختصرة عن عملك..."></textarea>
+                                    </div>
+                                    <button type="submit" disabled={isSubmitting} className="w-full py-2.5 bg-gradient-to-l from-gold-dark to-gold text-black font-bold rounded-lg shadow-lg">
+                                        {isSubmitting ? "جاري الإرسال..." : "إرسال المسودة إلى الإدارة"}
+                                    </button>
+                                </form>
+                            </div>
+                        )}
+
+                        {/* 3. تفاصيل الكتاب */}
                         {currentScreen === 'details' && selectedBook && (
                             <div className="space-y-5">
                                 <button onClick={() => setCurrentScreen('home')} className="text-xs text-gold flex items-center gap-1">
@@ -384,7 +520,7 @@
                             </div>
                         )}
 
-                        {/* 3. قارئ الكتاب */}
+                        {/* 4. قارئ الكتاب */}
                         {currentScreen === 'reader' && readerBook && (
                             <div className={`p-4 rounded-2xl min-h-[550px] flex flex-col justify-between border border-luxuryBorder relative overflow-hidden ${isNightMode ? 'bg-[#121212] text-gray-100' : 'bg-white text-gray-900'}`}>
                                 <div className="flex justify-between items-center border-b border-luxuryBorder/40 pb-2 z-20">
@@ -405,92 +541,96 @@
                                     ) : (
                                         <div className="text-center space-y-4 px-4">
                                             <h3 className="text-sm font-bold text-gold">محتوى الكتاب</h3>
-                                            <p className="text-xs leading-loose">
-                                                قارئ آمن ومحمي داخل منصة WonderRead.
-                                            </p>
+                                            <p className="text-xs leading-loose">قارئ آمن ومحمي داخل منصة WonderRead.</p>
                                         </div>
                                     )}
                                 </div>
                             </div>
                         )}
 
-                        {/* 4. لوحة الإدارة (تظهر فقط للأدمن) */}
+                        {/* 5. لوحة الإدارة الحصرية (أنت المتحكم والناشر الوحيد) */}
                         {isAdminMode && currentScreen === 'admin' && (
-                            <div className="space-y-5">
+                            <div className="space-y-6">
                                 <div className="flex justify-between items-center">
-                                    <h2 className="text-sm font-black text-gold">إدارة محتوى المكتبة</h2>
+                                    <h2 className="text-sm font-black text-gold">لوحة الإدارة والنشر الحصري</h2>
                                     <button onClick={() => setCurrentScreen('home')} className="text-xs text-gray-400">العودة للرئيسية</button>
                                 </div>
 
-                                <form onSubmit={handleAddBook} className="bg-luxuryCard p-4 rounded-xl border border-luxuryBorder space-y-3.5 text-xs">
-                                    <h3 className="font-bold text-white border-b border-luxuryBorder pb-2">إضافة كتاب جديد</h3>
-                                    
+                                {/* صندوق وارد المسودات الواردة من الزوار */}
+                                <div className="border border-gold/30 rounded-xl p-3 bg-luxuryCard space-y-3">
+                                    <h3 className="text-xs font-bold text-gold flex items-center justify-between">
+                                        <span>📥 صندوق المسودات والمقترحات الواردة ({proposals.length})</span>
+                                        <span className="text-[9px] text-gray-400">سري للمشرف فقط</span>
+                                    </h3>
+
+                                    {proposals.length === 0 ? (
+                                        <p className="text-[11px] text-gray-500 text-center py-2">لا توجد مسودات مقدمة حالياً.</p>
+                                    ) : (
+                                        proposals.map(p => (
+                                            <div key={p.id || Math.random()} className="bg-luxuryBg p-3 rounded-lg border border-luxuryBorder space-y-1.5 text-xs">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="font-bold text-white">{p.title}</span>
+                                                    <span className="text-[9px] text-gray-500">{p.submittedAt}</span>
+                                                </div>
+                                                <p className="text-gold text-[11px]">المؤلف: {p.author} | التواصل: {p.contact}</p>
+                                                {p.note && <p className="text-gray-400 text-[10px]">{p.note}</p>}
+                                                <div className="flex justify-between items-center pt-2 border-t border-luxuryBorder/40">
+                                                    <a href={p.pdf_url} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 underline">
+                                                        فتح ملف المسودة ↗
+                                                    </a>
+                                                    <button onClick={() => handleDeleteProposal(p.id)} className="text-red-400 text-[10px]">
+                                                        حذف المسودة
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+
+                                {/* نموذج نشر كتاب جديد مباشرة في المكتبة */}
+                                <form onSubmit={handleAdminPublishBook} className="bg-luxuryCard p-4 rounded-xl border border-luxuryBorder space-y-3 text-xs">
+                                    <h3 className="font-bold text-white border-b border-luxuryBorder pb-2">نشر كتاب في المكتبة (حصري لك)</h3>
                                     <div>
                                         <label className="text-gray-300 block mb-1">عنوان الكتاب *</label>
-                                        <input type="text" value={newBook.title} onChange={e => setNewBook({...newBook, title: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2.5 text-white" placeholder="عنوان الكتاب" required />
+                                        <input type="text" value={adminBook.title} onChange={e => setAdminBook({...adminBook, title: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white" placeholder="اسم الكتاب" required />
                                     </div>
-
                                     <div className="grid grid-cols-2 gap-2">
                                         <div>
                                             <label className="text-gray-300 block mb-1">اسم الكاتب *</label>
-                                            <input type="text" value={newBook.author} onChange={e => setNewBook({...newBook, author: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2.5 text-white" placeholder="اسم الكاتب" required />
+                                            <input type="text" value={adminBook.author} onChange={e => setAdminBook({...adminBook, author: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white" placeholder="الكاتب" required />
                                         </div>
                                         <div>
                                             <label className="text-gray-300 block mb-1">السعر ($) *</label>
-                                            <input type="number" step="0.01" value={newBook.price} onChange={e => setNewBook({...newBook, price: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2.5 text-white" placeholder="0 للمجاني" required />
+                                            <input type="number" step="0.01" value={adminBook.price} onChange={e => setAdminBook({...adminBook, price: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white" placeholder="0 للمجاني" required />
                                         </div>
                                     </div>
-
                                     <div>
                                         <label className="text-gray-300 block mb-1">القسم</label>
-                                        <select value={newBook.category} onChange={e => setNewBook({...newBook, category: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2.5 text-white">
+                                        <select value={adminBook.category} onChange={e => setAdminBook({...adminBook, category: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white">
                                             {CATEGORIES.slice(1).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                         </select>
                                     </div>
-
                                     <div className="p-3 bg-luxuryBg rounded-xl border border-luxuryBorder space-y-2">
-                                        <label className="text-gold font-bold block">صورة غلاف الكتاب (تصغير وتجهيز تلقائي)</label>
-                                        <input 
-                                            type="file" 
-                                            accept="image/*" 
-                                            onChange={handleImageUpload}
-                                            className="w-full text-xs text-gray-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-gold file:text-black"
-                                        />
-                                        {coverPreview && (
-                                            <div className="mt-2 flex items-center gap-3">
-                                                <img src={coverPreview} alt="معاينة" className="w-14 h-20 object-cover rounded border border-gold/40" />
-                                                <span className="text-[10px] text-emerald-400">تم تجهيز وضغط الصورة بنجاح ✓</span>
-                                            </div>
-                                        )}
+                                        <label className="text-gold font-bold block">غلاف الكتاب (تصغير تلقائي)</label>
+                                        <input type="file" accept="image/*" onChange={handleImageUpload} className="w-full text-xs text-gray-400 file:py-1 file:px-2 file:bg-gold file:text-black file:rounded" />
+                                        {adminCoverPreview && <img src={adminCoverPreview} alt="" className="w-14 h-20 object-cover rounded border border-gold/40 mt-1" />}
                                     </div>
-
-                                    <div className="p-3 bg-luxuryBg rounded-xl border border-luxuryBorder space-y-1.5">
-                                        <label className="text-gold font-bold block">رابط ملف الكتاب PDF (Google Drive أو مباشر)</label>
-                                        <input 
-                                            type="url" 
-                                            placeholder="https://drive.google.com/... أو رابط مباشر" 
-                                            value={newBook.pdf_url} 
-                                            onChange={e => setNewBook({...newBook, pdf_url: e.target.value})} 
-                                            className="w-full bg-luxuryCard border border-luxuryBorder rounded-lg p-2.5 text-white text-[11px]"
-                                        />
+                                    <div>
+                                        <label className="text-gold font-bold block mb-1">رابط PDF المباشر</label>
+                                        <input type="url" placeholder="https://drive.google.com/..." value={adminBook.pdf_url} onChange={e => setAdminBook({...adminBook, pdf_url: e.target.value})} className="w-full bg-luxuryCard border border-luxuryBorder rounded-lg p-2 text-white text-[11px]" />
                                     </div>
-
                                     <div>
                                         <label className="text-gray-300 block mb-1">نبذة عن الكتاب</label>
-                                        <textarea rows="2" value={newBook.description} onChange={e => setNewBook({...newBook, description: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white" placeholder="نبذة عن الكتاب..."></textarea>
+                                        <textarea rows="2" value={adminBook.description} onChange={e => setAdminBook({...adminBook, description: e.target.value})} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white"></textarea>
                                     </div>
-
-                                    <button 
-                                        type="submit" 
-                                        disabled={isSubmitting}
-                                        className="w-full py-3 bg-gradient-to-l from-gold-dark to-gold text-black font-bold rounded-lg text-xs disabled:opacity-50"
-                                    >
-                                        {isSubmitting ? "جاري الحفظ..." : "حفظ الكتاب في المكتبة"}
+                                    <button type="submit" disabled={isSubmitting} className="w-full py-2.5 bg-gradient-to-l from-gold-dark to-gold text-black font-bold rounded-lg text-xs">
+                                        نشر الكتاب في المكتبة العامة فوراً
                                     </button>
                                 </form>
 
+                                {/* إدارة الكتب المنشورة */}
                                 <div className="space-y-2">
-                                    <h4 className="text-xs font-bold text-gray-300">الكتب المحفوظة ({books.length})</h4>
+                                    <h4 className="text-xs font-bold text-gray-300">الكتب المنشورة حالياً ({books.length})</h4>
                                     {books.map(b => (
                                         <div key={b.id} className="bg-luxuryCard p-2.5 rounded-lg border border-luxuryBorder flex justify-between items-center text-xs">
                                             <div className="flex items-center gap-2 truncate max-w-[200px]">
@@ -507,7 +647,7 @@
                             </div>
                         )}
 
-                        {/* 5. المكتبة الشاملة */}
+                        {/* 6. المكتبة الشاملة */}
                         {currentScreen === 'library' && (
                             <div className="space-y-4">
                                 <input 
@@ -531,7 +671,7 @@
 
                     </main>
 
-                    {/* نافذة الدفع عبر بايننس */}
+                    {/* نافذة الدفع بايننس */}
                     {showPaymentModal && selectedBook && (
                         <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                             <div className="bg-luxuryCard border border-luxuryBorder p-5 rounded-2xl w-full max-w-sm space-y-4 text-xs">
@@ -539,12 +679,8 @@
                                     <h3 className="text-sm font-bold text-yellow-500">🟡 الدفع عبر محفظة بايننس</h3>
                                     <button onClick={() => setShowPaymentModal(false)} className="text-gray-400 text-sm">✕</button>
                                 </div>
-
                                 <div className="space-y-3">
-                                    <p className="text-gray-300">
-                                        لشراء وقراءة كتاب <span className="text-white font-bold">"{selectedBook.title}"</span>:
-                                    </p>
-                                    
+                                    <p className="text-gray-300">لشراء وقراءة كتاب <span className="text-white font-bold">"{selectedBook.title}"</span>:</p>
                                     <div className="bg-luxuryBg p-3 rounded-xl border border-luxuryBorder space-y-1.5">
                                         <div className="flex justify-between text-gray-400">
                                             <span>المبلغ المطلوب:</span>
@@ -555,41 +691,24 @@
                                             <span className="text-white font-bold">BNB Smart Chain (BEP20) / TRC20</span>
                                         </div>
                                     </div>
-
                                     <div>
                                         <label className="text-gray-400 block mb-1">عنوان المحفظة (اضغط للنسخ):</label>
-                                        <div 
-                                            onClick={handleCopyAddress}
-                                            className="bg-black/60 p-2.5 rounded-lg border border-yellow-500/30 text-[10px] font-mono break-all text-yellow-300 cursor-pointer flex justify-between items-center"
-                                        >
+                                        <div onClick={handleCopyAddress} className="bg-black/60 p-2.5 rounded-lg border border-yellow-500/30 text-[10px] font-mono break-all text-yellow-300 cursor-pointer flex justify-between items-center">
                                             <span>{BINANCE_USDT_ADDRESS}</span>
                                             <span className="text-[9px] bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded ml-1">نسخ</span>
                                         </div>
                                     </div>
-
                                     <div>
                                         <label className="text-gray-400 block mb-1">رقم أو رمز العملية (TXID / Order ID):</label>
-                                        <input 
-                                            type="text" 
-                                            placeholder="الصق رقم العملية هنا بعد التحويل" 
-                                            value={txidInput} 
-                                            onChange={e => setTxidInput(e.target.value)} 
-                                            className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white text-[11px]"
-                                        />
+                                        <input type="text" placeholder="الصق رقم العملية هنا بعد التحويل" value={txidInput} onChange={e => setTxidInput(e.target.value)} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white text-[11px]" />
                                     </div>
-
-                                    <button 
-                                        onClick={handleConfirmPayment}
-                                        className="w-full py-2.5 bg-gradient-to-l from-yellow-600 to-yellow-500 text-black font-bold rounded-lg text-xs"
-                                    >
-                                        تأكيد إرسال التحويل
-                                    </button>
+                                    <button onClick={handleConfirmPayment} className="w-full py-2.5 bg-gradient-to-l from-yellow-600 to-yellow-500 text-black font-bold rounded-lg text-xs">تأكيد إرسال التحويل</button>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* القائمة السفلية (يختفي زر الإدارة تماماً للقراء العاديين) */}
+                    {/* القائمة السفلية */}
                     <nav className="fixed bottom-0 left-0 right-0 bg-[#0D0D0D]/95 border-t border-luxuryBorder py-2.5 px-6 flex justify-around items-center max-w-md mx-auto z-40 text-xs">
                         <button onClick={() => setCurrentScreen('home')} className={`font-bold ${currentScreen === 'home' ? 'text-gold' : 'text-gray-500'}`}>الرئيسية</button>
                         <button onClick={() => setCurrentScreen('library')} className={`font-bold ${currentScreen === 'library' ? 'text-gold' : 'text-gray-500'}`}>المكتبة</button>

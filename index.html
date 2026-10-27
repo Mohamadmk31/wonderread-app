@@ -57,6 +57,7 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
+        // عنوان محفظة بايننس الخاص بك
         const BINANCE_USDT_ADDRESS = "0x71c2b5e1974780447385012586f189f7831fbe61";
 
         let db = null;
@@ -94,6 +95,7 @@
 
         const CATEGORIES = ["الكل", "إدارة وأعمال", "تاريخ", "تكنولوجيا", "تطوير ذات", "روايات"];
 
+        // ضغط وتصغير صورة الغلاف
         const compressImage = (file, maxWidth = 420, quality = 0.7) => {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -150,18 +152,18 @@
             const [readerBook, setReaderBook] = useState(null);
             const [isNightMode, setIsNightMode] = useState(true);
 
-            // حالات الدفع
-            const [showPaymentModal, setShowPaymentModal] = useState(false);
+            // حالة الدفع الخفيفة المضمنة
             const [txidInput, setTxidInput] = useState('');
+            const [isUnlocked, setIsUnlocked] = useState(false);
 
-            // نموذج إضافة كتاب (للأدمن فقط)
+            // نموذج إضافة كتاب (حصري للأدمن)
             const [adminBook, setAdminBook] = useState({
                 title: '', author: '', category: 'إدارة وأعمال', price: '', pages: 120, cover_image: '', pdf_url: '', description: ''
             });
             const [adminCoverPreview, setAdminCoverPreview] = useState(null);
             const [isSubmitting, setIsSubmitting] = useState(false);
 
-            // نموذج تقديم مسودة كتاب (للمستخدمين والكتّاب فقط)
+            // نموذج تقديم مسودة عمل (للقراء والكتّاب الزوار)
             const [userProposal, setUserProposal] = useState({
                 title: '', author: '', contact: '', pdf_url: '', note: ''
             });
@@ -197,7 +199,7 @@
                 }
             }, [isAdminMode]);
 
-            // رفع وضغط صورة الغلاف في لوحة المشرف
+            // رفع وضغط الغلاف
             const handleImageUpload = async (e) => {
                 const file = e.target.files[0];
                 if (file) {
@@ -211,7 +213,7 @@
                 }
             };
 
-            // نشر كتاب جديد (خاص بالمشرف فقط)
+            // نشر كتاب جديد من الإدارة
             const handleAdminPublishBook = async (e) => {
                 e.preventDefault();
                 if (!adminBook.title || !adminBook.author || adminBook.price === '') {
@@ -253,7 +255,7 @@
                 }
             };
 
-            // إرسال مسودة من قارئ/كاتب (تذهب لصندوق وارد المشرف فقط)
+            // تقديم مسودة من كاتب زائر
             const handleUserSubmitProposal = async (e) => {
                 e.preventDefault();
                 if (!userProposal.title || !userProposal.author || !userProposal.pdf_url) {
@@ -279,7 +281,7 @@
                         setProposals(localP);
                         localStorage.setItem('wonderread_proposals', JSON.stringify(localP));
                     }
-                    alert("شكراً لك! تم استلام مقترحك بنجاح وسيتم الاطلاع عليه ومراجعته من قِبل إدارة WonderRead.");
+                    alert("شكراً لك! تم استلام مقترحك بنجاح وسيتواصل معك المشرف بعد مراجعته.");
                     setUserProposal({ title: '', author: '', contact: '', pdf_url: '', note: '' });
                     setCurrentScreen('home');
                 } catch (err) {
@@ -289,7 +291,6 @@
                 }
             };
 
-            // حذف مقترح مسودة
             const handleDeleteProposal = async (id) => {
                 if (confirm("هل تريد حذف هذا المقترح؟")) {
                     if (isCloudActive && db) {
@@ -301,7 +302,6 @@
                 }
             };
 
-            // حذف كتاب منشور
             const handleDeleteBook = async (id) => {
                 if (confirm("هل تريد حذف هذا الكتاب نهائياً من المكتبة؟")) {
                     if (isCloudActive && db) {
@@ -313,19 +313,33 @@
                 }
             };
 
+            // نسخ العنوان
             const handleCopyAddress = () => {
                 navigator.clipboard.writeText(BINANCE_USDT_ADDRESS);
                 alert("تم نسخ عنوان محفظة بايننس بنجاح!");
             };
 
-            const handleConfirmPayment = () => {
+            // تأكيد عملية الدفع الخفيفة
+            const handleQuickPay = async () => {
                 if (!txidInput.trim()) {
-                    alert("يرجى إدخال رقم العملية (TXID / Order ID) للتحقق.");
+                    alert("يرجى كتابة رقم أو معرف التحويل (TXID) للتأكيد.");
                     return;
                 }
-                alert(`شكراً لك! تم استلام رقم التحويل (${txidInput.trim()}) لكتاب "${selectedBook.title}". سيتم التأكيد وتفعيل القراءة.`);
-                setShowPaymentModal(false);
-                setTxidInput('');
+
+                // تسجيل إشعار الدفعة في السحابة إن كانت مفعلة
+                if (isCloudActive && db) {
+                    try {
+                        await db.collection("payments").add({
+                            bookTitle: selectedBook.title,
+                            amount: selectedBook.price,
+                            txid: txidInput.trim(),
+                            date: new Date().toLocaleString('ar-EG')
+                        });
+                    } catch (e) {}
+                }
+
+                setIsUnlocked(true);
+                alert("تم تأكيد العملية بنجاح! تم فتح قراءة الكتاب.");
             };
 
             return (
@@ -345,7 +359,6 @@
                         </div>
 
                         <div className="flex items-center space-x-2 space-x-reverse">
-                            {/* زر للمستخدمين لتقديم مقترح/مسودة */}
                             <button 
                                 onClick={() => setCurrentScreen('submit-proposal')}
                                 className="px-2.5 py-1.5 rounded-full text-[11px] font-semibold bg-luxuryCard border border-gold/40 text-gold hover:bg-gold/10"
@@ -353,7 +366,6 @@
                                 تقديم مسودة عمل +
                             </button>
 
-                            {/* زر الإدارة الحصري لك أنت */}
                             {isAdminMode && (
                                 <button 
                                     onClick={() => setCurrentScreen('admin')}
@@ -418,7 +430,7 @@
                                         {books.map(b => (
                                             <div 
                                                 key={b.id} 
-                                                onClick={() => { setSelectedBook(b); setCurrentScreen('details'); }}
+                                                onClick={() => { setSelectedBook(b); setIsUnlocked(false); setTxidInput(''); setCurrentScreen('details'); }}
                                                 className="bg-luxuryCard border border-luxuryBorder rounded-xl overflow-hidden cursor-pointer hover:border-gold/40 transition-all"
                                             >
                                                 <div className="aspect-[3/4] overflow-hidden bg-black/40">
@@ -439,7 +451,7 @@
                             </div>
                         )}
 
-                        {/* 2. تقديم مسودة عمل (للزوار - لا ينشر شيئاً بل يرسله للمشرف فقط) */}
+                        {/* 2. تقديم مسودة عمل (للزوار) */}
                         {currentScreen === 'submit-proposal' && (
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center">
@@ -447,7 +459,7 @@
                                     <button onClick={() => setCurrentScreen('home')} className="text-xs text-gray-400">إلغاء</button>
                                 </div>
                                 <div className="bg-luxuryCard p-3 rounded-xl border border-luxuryBorder text-xs text-gray-300 leading-relaxed">
-                                    أهلاً بك! يمكنك إرسال مسودة كتابك أو ملفك إلى الإدارة لمراجعته والتواصل معك؛ لن يُنشر أي عمل في المكتبة إلا بعد اعتماده رسمياً من الإدارة.
+                                    أهلاً بك! يمكنك إرسال مسودة كتابك أو ملفك إلى الإدارة لمراجعته؛ لن يُنشر أي عمل في المكتبة إلا بعد اعتماده رسمياً من المشرف.
                                 </div>
 
                                 <form onSubmit={handleUserSubmitProposal} className="bg-luxuryCard p-4 rounded-xl border border-luxuryBorder space-y-3 text-xs">
@@ -478,7 +490,7 @@
                             </div>
                         )}
 
-                        {/* 3. تفاصيل الكتاب */}
+                        {/* 3. تفاصيل الكتاب مع بطاقة الدفع الخفيفة المدمجة */}
                         {currentScreen === 'details' && selectedBook && (
                             <div className="space-y-5">
                                 <button onClick={() => setCurrentScreen('home')} className="text-xs text-gold flex items-center gap-1">
@@ -500,23 +512,55 @@
                                     {selectedBook.description}
                                 </div>
 
-                                <div className="space-y-2">
-                                    {selectedBook.price > 0 && (
-                                        <button 
-                                            onClick={() => setShowPaymentModal(true)}
-                                            className="w-full py-3 bg-gradient-to-l from-yellow-600 to-yellow-500 text-black rounded-xl font-bold text-xs flex justify-center items-center gap-2 shadow-lg"
-                                        >
-                                            <span>🟡 شراء الكتاب عبر محفظة بايننس (Binance USDT)</span>
-                                        </button>
-                                    )}
+                                {/* وسيلة الدفع الخفيفة والمباشرة */}
+                                {selectedBook.price > 0 && !isUnlocked ? (
+                                    <div className="bg-gradient-to-br from-luxuryCard to-black border border-yellow-500/30 rounded-xl p-3.5 space-y-3 text-xs">
+                                        <div className="flex justify-between items-center border-b border-luxuryBorder pb-2">
+                                            <span className="font-bold text-yellow-500 flex items-center gap-1">
+                                                <span>🟡</span> الدفع المباشر عبر Binance USDT
+                                            </span>
+                                            <span className="text-[10px] bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded font-mono">
+                                                BEP20 / TRC20
+                                            </span>
+                                        </div>
 
+                                        <div>
+                                            <label className="text-gray-400 block mb-1 text-[11px]">عنوان محفظة الاستلام (اضغط للنسخ):</label>
+                                            <div 
+                                                onClick={handleCopyAddress}
+                                                className="bg-black/60 p-2.5 rounded-lg border border-yellow-500/20 text-[10px] font-mono break-all text-yellow-300 cursor-pointer flex justify-between items-center"
+                                            >
+                                                <span>{BINANCE_USDT_ADDRESS}</span>
+                                                <span className="text-[9px] bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded ml-1">نسخ</span>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-gray-400 block mb-1 text-[11px]">رقم أو رمز العملية (TXID) بعد التحويل:</label>
+                                            <input 
+                                                type="text" 
+                                                placeholder="الصق رقم العملية هنا..." 
+                                                value={txidInput} 
+                                                onChange={e => setTxidInput(e.target.value)} 
+                                                className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white text-[11px]"
+                                            />
+                                        </div>
+
+                                        <button 
+                                            onClick={handleQuickPay}
+                                            className="w-full py-2.5 bg-gradient-to-l from-yellow-600 to-yellow-500 text-black font-bold rounded-lg text-xs shadow-lg"
+                                        >
+                                            تأكيد التحويل وفتح الكتاب للقراءة
+                                        </button>
+                                    </div>
+                                ) : (
                                     <button 
                                         onClick={() => { setReaderBook(selectedBook); setCurrentScreen('reader'); }}
                                         className="w-full py-3 bg-gradient-to-l from-gold-dark to-gold text-black rounded-xl font-bold text-xs shadow-lg"
                                     >
-                                        فتح وقراءة الكتاب
+                                        فتح وقراءة صفحات الكتاب
                                     </button>
-                                </div>
+                                )}
                             </div>
                         )}
 
@@ -548,7 +592,7 @@
                             </div>
                         )}
 
-                        {/* 5. لوحة الإدارة الحصرية (أنت المتحكم والناشر الوحيد) */}
+                        {/* 5. لوحة الإدارة الحصرية للمشرف */}
                         {isAdminMode && currentScreen === 'admin' && (
                             <div className="space-y-6">
                                 <div className="flex justify-between items-center">
@@ -556,7 +600,7 @@
                                     <button onClick={() => setCurrentScreen('home')} className="text-xs text-gray-400">العودة للرئيسية</button>
                                 </div>
 
-                                {/* صندوق وارد المسودات الواردة من الزوار */}
+                                {/* صندوق المسودات */}
                                 <div className="border border-gold/30 rounded-xl p-3 bg-luxuryCard space-y-3">
                                     <h3 className="text-xs font-bold text-gold flex items-center justify-between">
                                         <span>📥 صندوق المسودات والمقترحات الواردة ({proposals.length})</span>
@@ -587,7 +631,7 @@
                                     )}
                                 </div>
 
-                                {/* نموذج نشر كتاب جديد مباشرة في المكتبة */}
+                                {/* نموذج نشر كتاب جديد */}
                                 <form onSubmit={handleAdminPublishBook} className="bg-luxuryCard p-4 rounded-xl border border-luxuryBorder space-y-3 text-xs">
                                     <h3 className="font-bold text-white border-b border-luxuryBorder pb-2">نشر كتاب في المكتبة (حصري لك)</h3>
                                     <div>
@@ -659,7 +703,7 @@
                                 />
                                 <div className="grid grid-cols-2 gap-3">
                                     {books.filter(b => (selectedCategory === 'الكل' || b.category === selectedCategory) && (b.title.includes(searchQuery) || b.author.includes(searchQuery))).map(b => (
-                                        <div key={b.id} onClick={() => { setSelectedBook(b); setCurrentScreen('details'); }} className="bg-luxuryCard border border-luxuryBorder rounded-xl p-2 cursor-pointer">
+                                        <div key={b.id} onClick={() => { setSelectedBook(b); setIsUnlocked(false); setTxidInput(''); setCurrentScreen('details'); }} className="bg-luxuryCard border border-luxuryBorder rounded-xl p-2 cursor-pointer">
                                             <img src={b.cover_image} className="aspect-[3/4] w-full object-cover rounded-lg mb-2" />
                                             <h4 className="text-xs font-bold truncate">{b.title}</h4>
                                             <span className="text-[10px] text-gold">{b.price === 0 ? "مجاني" : `${b.price} $`}</span>
@@ -670,43 +714,6 @@
                         )}
 
                     </main>
-
-                    {/* نافذة الدفع بايننس */}
-                    {showPaymentModal && selectedBook && (
-                        <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                            <div className="bg-luxuryCard border border-luxuryBorder p-5 rounded-2xl w-full max-w-sm space-y-4 text-xs">
-                                <div className="flex justify-between items-center border-b border-luxuryBorder pb-2">
-                                    <h3 className="text-sm font-bold text-yellow-500">🟡 الدفع عبر محفظة بايننس</h3>
-                                    <button onClick={() => setShowPaymentModal(false)} className="text-gray-400 text-sm">✕</button>
-                                </div>
-                                <div className="space-y-3">
-                                    <p className="text-gray-300">لشراء وقراءة كتاب <span className="text-white font-bold">"{selectedBook.title}"</span>:</p>
-                                    <div className="bg-luxuryBg p-3 rounded-xl border border-luxuryBorder space-y-1.5">
-                                        <div className="flex justify-between text-gray-400">
-                                            <span>المبلغ المطلوب:</span>
-                                            <span className="text-yellow-400 font-bold">{selectedBook.price} USDT</span>
-                                        </div>
-                                        <div className="flex justify-between text-gray-400">
-                                            <span>الشبكة المعتمدة:</span>
-                                            <span className="text-white font-bold">BNB Smart Chain (BEP20) / TRC20</span>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="text-gray-400 block mb-1">عنوان المحفظة (اضغط للنسخ):</label>
-                                        <div onClick={handleCopyAddress} className="bg-black/60 p-2.5 rounded-lg border border-yellow-500/30 text-[10px] font-mono break-all text-yellow-300 cursor-pointer flex justify-between items-center">
-                                            <span>{BINANCE_USDT_ADDRESS}</span>
-                                            <span className="text-[9px] bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded ml-1">نسخ</span>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="text-gray-400 block mb-1">رقم أو رمز العملية (TXID / Order ID):</label>
-                                        <input type="text" placeholder="الصق رقم العملية هنا بعد التحويل" value={txidInput} onChange={e => setTxidInput(e.target.value)} className="w-full bg-luxuryBg border border-luxuryBorder rounded-lg p-2 text-white text-[11px]" />
-                                    </div>
-                                    <button onClick={handleConfirmPayment} className="w-full py-2.5 bg-gradient-to-l from-yellow-600 to-yellow-500 text-black font-bold rounded-lg text-xs">تأكيد إرسال التحويل</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
 
                     {/* القائمة السفلية */}
                     <nav className="fixed bottom-0 left-0 right-0 bg-[#0D0D0D]/95 border-t border-luxuryBorder py-2.5 px-6 flex justify-around items-center max-w-md mx-auto z-40 text-xs">
